@@ -1,0 +1,211 @@
+package anthropiccompat
+
+import (
+	"context"
+	"encoding/json"
+	"fmt"
+	"os"
+	"strings"
+
+	"github.com/anthropics/anthropic-sdk-go"
+	"github.com/anthropics/anthropic-sdk-go/packages/ssestream"
+	"github.com/anthropics/anthropic-sdk-go/option"
+	"github.com/stefanfaur/sam/internal/llm"
+)
+
+var Debug = os.Getenv("SAM_DEBUG") == "1"
+
+type Options struct {
+	APIKey  string
+	BaseURL string
+}
+
+type Client struct {
+	apiKey  string
+	baseURL string
+}
+
+func New(opts Options) (*Client, error) {
+	client := &Client{
+		apiKey:  opts.APIKey,
+		baseURL: strings.TrimSuffix(opts.BaseURL, "/"),
+	}
+	return client, nil
+}
+
+func (c *Client) Stream(ctx context.Context, req llm.Request) (<-chan llm.StreamEvent, error) {
+	auth := c.apiKey
+	if auth == "" {
+		return nil, fmt.Errorf("no API key provided")
+	}
+
+	baseURL := c.baseURL
+	if baseURL == "" {
+		baseURL = "https://api.anthropic.com"
+	}
+
+	client := anthropic.NewClient(
+		option.WithAPIKey(auth),
+		option.WithBaseURL(baseURL),
+	)
+
+	maxTokens := req.MaxTokens
+	if maxTokens <= 0 {
+		maxTokens = 4096
+	}
+
+	// Build messages using SDK types
+	msgs := make([]anthropic.MessageParam, 0, len(req.Messages))
+	for _, msg := range req.Messages {
+		blocks := make([]anthropic.ContentBlockParamUnion, 0, len(msg.Content))
+		for _, block := range msg.Content {
+			switch block.Type {
+			case llm.ContentText:
+				blocks = append(blocks, anthropic.NewTextBlock(block.Text))
+			case llm.ContentToolUse:
+				var input map[string]any
+				if len(block.Input) > 0 {
+					_ = json.Unmarshal(block.Input, &input)
+				}
+				blocks = append(blocks, anthropic.NewToolUseBlock(
+					block.ToolUseID,
+					input,
+					block.ToolName,
+				))
+			case llm.ContentToolResult:
+				blocks = append(blocks, anthropic.NewToolResultBlock(
+					block.ToolUseID,
+					block.Output,
+					block.IsError,
+				))
+			}
+		}
+		if msg.Role == llm.RoleAssistant {
+			msgs = append(msgs, anthropic.NewAssistantMessage(blocks...))
+		} else {
+			msgs = append(msgs, anthropic.NewUserMessage(blocks...))
+		}
+	}
+
+	// Build tools
+	var tools []anthropic.ToolUnionParam
+	for _, tool := range req.Tools {
+		schema := tool.Schema
+		var required []string
+		if props, ok := schema["properties"].(map[string]any); ok {
+			for k := range props {
+				required = append(required, k)
+			}
+		}
+		tools = append(tools, anthropic.ToolUnionParamOfTool(
+			anthropic.ToolInputSchemaParam{
+				Properties: schema,
+				Required:   required,
+			},
+			tool.Name,
+		))
+	}
+
+	// Create request params
+	params := anthropic.MessageNewParams{
+		Model:     req.Model,
+		MaxTokens: int64(maxTokens),
+		Messages:  msgs,
+		Tools:     tools,
+	}
+	if req.System != "" {
+		params.System = []anthropic.TextBlockParam{{Text: req.System}}
+	}
+
+	stream := client.Messages.NewStreaming(ctx, params)
+	// Check for immediate error (e.g., invalid params before HTTP call)
+	if err := stream.Err(); err != nil {
+		return nil, fmt.Errorf("stream error: %w", err)
+	}
+
+	ch := make(chan llm.StreamEvent, 64)
+	go readStream(stream, ch)
+	return ch, nil
+}
+
+func readStream(stream *ssestream.Stream[anthropic.MessageStreamEventUnion], out chan<- llm.StreamEvent) {
+	defer close(out)
+
+	var currentTool struct {
+		id, name string
+		json     strings.Builder
+		active   bool
+	}
+
+	for stream.Next() {
+		event := stream.Current()
+
+		switch e := event.AsAny().(type) {
+		case anthropic.MessageStartEvent:
+			out <- llm.StreamEvent{
+				Type:         llm.EventMessageStart,
+				InputTokens:  int(e.Message.Usage.InputTokens),
+				OutputTokens: int(e.Message.Usage.OutputTokens),
+			}
+
+		case anthropic.ContentBlockStartEvent:
+			cb := e.ContentBlock
+			if cb.Type == "tool_use" {
+				currentTool.id = cb.ID
+				currentTool.name = cb.Name
+				currentTool.json.Reset()
+				currentTool.active = true
+				out <- llm.StreamEvent{
+					Type:      llm.EventToolUseStart,
+					ToolUseID: currentTool.id,
+					ToolName:  currentTool.name,
+				}
+			} else if cb.Type == "text" {
+				out <- llm.StreamEvent{Type: llm.EventContentBlockStart}
+			}
+
+		case anthropic.ContentBlockDeltaEvent:
+			switch {
+			case e.Delta.Type == "text_delta":
+				out <- llm.StreamEvent{
+					Type: llm.EventTextDelta,
+					Text: e.Delta.Text,
+				}
+			case e.Delta.Type == "thinking_delta":
+				out <- llm.StreamEvent{
+					Type: llm.EventThinkingDelta,
+					Text: e.Delta.Thinking,
+				}
+			case e.Delta.Type == "input_json_delta":
+				if currentTool.active {
+					out <- llm.StreamEvent{
+						Type:        llm.EventToolUseDelta,
+						ToolUseID:   currentTool.id,
+						PartialJSON: e.Delta.PartialJSON,
+					}
+				}
+			}
+
+		case anthropic.ContentBlockStopEvent:
+			if currentTool.active {
+				out <- llm.StreamEvent{Type: llm.EventToolUseStop}
+				currentTool.active = false
+			}
+
+		case anthropic.MessageDeltaEvent:
+			out <- llm.StreamEvent{
+				Type:         llm.EventMessageStop,
+				StopReason:   string(e.Delta.StopReason),
+				InputTokens:  int(e.Usage.InputTokens),
+				OutputTokens: int(e.Usage.OutputTokens),
+			}
+
+		case anthropic.MessageStopEvent:
+			out <- llm.StreamEvent{Type: llm.EventMessageStop, StopReason: ""}
+		}
+	}
+
+	if err := stream.Err(); err != nil {
+		out <- llm.StreamEvent{Type: llm.EventError, Err: err}
+	}
+}
