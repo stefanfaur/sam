@@ -73,8 +73,7 @@ func (a *authForm) Done() bool   { return a.done }
 
 func (a *authForm) Apply(m *Model) tea.Cmd {
 	if a.form.State == huh.StateAborted || a.key == "" {
-		m.addInfo("auth cancelled")
-		return nil
+		return m.addInfo("auth cancelled")
 	}
 	s := config.LoadSecrets()
 	switch a.provider {
@@ -84,8 +83,7 @@ func (a *authForm) Apply(m *Model) tea.Cmd {
 		s.AnthropicAPIKey = a.key
 	}
 	if err := config.SaveSecrets(s); err != nil {
-		m.addInfo("save secrets failed: " + err.Error())
-		return nil
+		return m.addInfo("save secrets failed: " + err.Error())
 	}
 	s.ApplyEnv()
 
@@ -93,14 +91,12 @@ func (a *authForm) Apply(m *Model) tea.Cmd {
 	if a.factory != nil {
 		p, err := a.factory(a.provider, m.status.model)
 		if err != nil {
-			m.addInfo(fmt.Sprintf("%s key saved; provider rebuild failed: %v", a.provider, err))
-			return nil
+			return m.addInfo(fmt.Sprintf("%s key saved; provider rebuild failed: %v", a.provider, err))
 		}
 		m.agent.SetProvider(p)
 		m.status.provider = a.provider
 	}
-	m.addInfo(fmt.Sprintf("saved %s API key to %s", a.provider, config.SecretsPath()))
-	return nil
+	return m.addInfo(fmt.Sprintf("saved %s API key to %s", a.provider, config.SecretsPath()))
 }
 
 // --- /model ---
@@ -167,21 +163,18 @@ func (m *modelForm) Done() bool   { return m.done }
 
 func (m *modelForm) Apply(root *Model) tea.Cmd {
 	if m.form.State == huh.StateAborted {
-		root.addInfo("model unchanged")
-		return nil
+		return root.addInfo("model unchanged")
 	}
 	name := m.choice
 	if name == "__custom__" {
 		name = m.custom
 	}
 	if name == "" {
-		root.addInfo("model unchanged")
-		return nil
+		return root.addInfo("model unchanged")
 	}
 	root.agent.SetModel(name)
 	root.status.model = name
-	root.addInfo("model set to " + name)
-	return nil
+	return root.addInfo("model set to " + name)
 }
 
 // --- /provider ---
@@ -227,20 +220,16 @@ func (p *providerForm) Done() bool   { return p.done }
 
 func (p *providerForm) Apply(root *Model) tea.Cmd {
 	if p.form.State == huh.StateAborted || p.choice == "" {
-		root.addInfo("provider unchanged")
-		return nil
+		return root.addInfo("provider unchanged")
 	}
 	if p.factory == nil {
-		root.addInfo("provider switch not available")
-		return nil
+		return root.addInfo("provider switch not available")
 	}
 	prov, err := p.factory(p.choice, root.status.model)
 	if err != nil {
-		root.addInfo("provider build failed: " + err.Error())
-		return nil
+		return root.addInfo("provider build failed: " + err.Error())
 	}
 	root.agent.SetProvider(prov)
 	root.status.provider = p.choice
-	root.addInfo("provider set to " + p.choice)
-	return nil
+	return root.addInfo("provider set to " + p.choice)
 }

@@ -14,32 +14,20 @@ import (
 type Event = agent.Event
 
 type pendingTurn struct {
-	events   <-chan Event
-	raw      []rune // full assistant text received so far
-	shown    int    // runes of raw currently rendered
-	thinkRaw []rune
-	thinkShown int
-	toolRow  map[string]int
-	rendered bool
-	thinkIdx  int  // 1-based history index of thinking card, 0 if absent
-	done      bool // true once TurnDone arrived; ticker drains and finalizes
-	ticking   bool // a tick is in flight
-	tickCount int
-
-	// Stable-prefix markdown cache to avoid reflow flicker.
-	stablePrefix   string // raw text glamour has been run over
-	stableRendered string // glamour output for stablePrefix
+	events    <-chan Event
+	raw       []rune // full assistant text received so far
+	committed int    // rune index in raw that has been flushed to scrollback
+	thinkRaw  []rune // live thinking text (rendered in View(), never committed)
+	done      bool   // TurnDone received
 }
 
 type Model struct {
 	agent     *agent.Agent
-	viewport  viewport.Model
 	input     textarea.Model
 	status    statusbarModel
 	approval  *Approval
 	modal     modal
 	debug     debugModel
-	history   []renderedBlock
 	pending   *pendingTurn
 	width     int
 	height    int
@@ -48,18 +36,13 @@ type Model struct {
 	factory   ProviderFactory
 	suggest   suggestState
 	lastCtrlC time.Time
-	lastVP    string // last SetContent payload, skips repaint if identical
+	scanner   *blockScanner
 }
 
 type suggestState struct {
 	active   bool
 	matches  []string
 	selected int
-}
-
-type renderedBlock struct {
-	kind    string
-	content string
 }
 
 type statusbarModel struct {
@@ -108,11 +91,11 @@ func New(a *agent.Agent, ring *logging.Ring, opts Options) *Model {
 	}
 
 	return &Model{
-		agent:    a,
-		input:    ta,
-		viewport: viewport.New(80, 20),
-		glam:     glam,
-		ring:     ring,
+		agent:   a,
+		input:   ta,
+		glam:    glam,
+		ring:    ring,
+		scanner: &blockScanner{},
 		status: statusbarModel{
 			provider: opts.Provider,
 			model:    opts.Model,
