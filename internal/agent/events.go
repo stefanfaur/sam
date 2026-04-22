@@ -8,7 +8,7 @@ import (
 type DecisionKind string
 
 const (
-	DecisionAllow       DecisionKind = "allow"
+	DecisionAllow        DecisionKind = "allow"
 	DecisionAllowSession DecisionKind = "allow_session"
 	DecisionDeny         DecisionKind = "deny"
 )
@@ -86,3 +86,12 @@ type ErrorEvent struct {
 }
 
 func (ErrorEvent) isEvent() {}
+
+type UsageEvent struct {
+	InputTokens        int
+	OutputTokens       int
+	CacheReadInput     int
+	CacheCreationInput int
+}
+
+func (UsageEvent) isEvent() {}

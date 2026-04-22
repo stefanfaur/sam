@@ -4,6 +4,7 @@ import (
 	"fmt"
 	"os"
 	"path/filepath"
+	"strings"
 
 	"github.com/BurntSushi/toml"
 )
@@ -12,19 +13,42 @@ type ProviderConfig struct {
 	BaseURL string `toml:"base_url"`
 }
 
+type ModelConfig struct {
+	ContextWindow int `toml:"context_window"`
+}
+
 type Config struct {
-	Provider         string         `toml:"provider"`
-	Model            string         `toml:"model"`
-	SystemPromptFile string         `toml:"system_prompt_file"`
-	MaxTokens        int            `toml:"max_tokens"`
-	MaxIterations    int            `toml:"max_iterations"`
+	Provider         string `toml:"provider"`
+	Model            string `toml:"model"`
+	SystemPromptFile string `toml:"system_prompt_file"`
+	MaxTokens        int    `toml:"max_tokens"`
+	MaxIterations    int    `toml:"max_iterations"`
 	Providers        struct {
 		Minimax   ProviderConfig `toml:"minimax"`
 		Anthropic ProviderConfig `toml:"anthropic"`
 	} `toml:"providers"`
-	TUI struct {
+	Models map[string]ModelConfig `toml:"models"`
+	TUI    struct {
 		Theme string `toml:"theme"`
 	} `toml:"tui"`
+}
+
+// ModelContextWindow returns the configured context window in tokens,
+// falling back to family defaults or 128k for unknown models.
+func (c *Config) ModelContextWindow(name string) int {
+	if m, ok := c.Models[name]; ok && m.ContextWindow > 0 {
+		return m.ContextWindow
+	}
+	switch {
+	case strings.HasPrefix(name, "claude-opus"),
+		strings.HasPrefix(name, "claude-sonnet"),
+		strings.HasPrefix(name, "claude-haiku"):
+		return 200_000
+	case strings.HasPrefix(name, "MiniMax-M2"),
+		strings.HasPrefix(name, "MiniMax-M1"):
+		return 1_000_000
+	}
+	return 128_000
 }
 
 // Overrides are CLI flag values that take precedence over the TOML file.

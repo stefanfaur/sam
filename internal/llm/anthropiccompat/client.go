@@ -8,8 +8,8 @@ import (
 	"strings"
 
 	"github.com/anthropics/anthropic-sdk-go"
-	"github.com/anthropics/anthropic-sdk-go/packages/ssestream"
 	"github.com/anthropics/anthropic-sdk-go/option"
+	"github.com/anthropics/anthropic-sdk-go/packages/ssestream"
 	"github.com/stefanfaur/sam/internal/llm"
 )
 
@@ -143,9 +143,11 @@ func readStream(stream *ssestream.Stream[anthropic.MessageStreamEventUnion], out
 		switch e := event.AsAny().(type) {
 		case anthropic.MessageStartEvent:
 			out <- llm.StreamEvent{
-				Type:         llm.EventMessageStart,
-				InputTokens:  int(e.Message.Usage.InputTokens),
-				OutputTokens: int(e.Message.Usage.OutputTokens),
+				Type:               llm.EventMessageStart,
+				InputTokens:        int(e.Message.Usage.InputTokens),
+				OutputTokens:       int(e.Message.Usage.OutputTokens),
+				CacheReadInput:     int(e.Message.Usage.CacheReadInputTokens),
+				CacheCreationInput: int(e.Message.Usage.CacheCreationInputTokens),
 			}
 
 		case anthropic.ContentBlockStartEvent:
@@ -194,10 +196,12 @@ func readStream(stream *ssestream.Stream[anthropic.MessageStreamEventUnion], out
 
 		case anthropic.MessageDeltaEvent:
 			out <- llm.StreamEvent{
-				Type:         llm.EventMessageStop,
-				StopReason:   string(e.Delta.StopReason),
-				InputTokens:  int(e.Usage.InputTokens),
-				OutputTokens: int(e.Usage.OutputTokens),
+				Type:               llm.EventMessageStop,
+				StopReason:         string(e.Delta.StopReason),
+				InputTokens:        int(e.Usage.InputTokens),
+				OutputTokens:       int(e.Usage.OutputTokens),
+				CacheReadInput:     int(e.Usage.CacheReadInputTokens),
+				CacheCreationInput: int(e.Usage.CacheCreationInputTokens),
 			}
 
 		case anthropic.MessageStopEvent:

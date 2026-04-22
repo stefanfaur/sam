@@ -18,7 +18,7 @@ func TestMiniMaxToolCall(t *testing.T) {
 	}
 
 	req := llm.Request{
-		Model:     "MiniMax-M2.7",
+		Model:    "MiniMax-M2.7",
 		System:   "You are a helpful assistant.",
 		Messages: []llm.Message{{Role: llm.RoleUser, Content: []llm.ContentBlock{{Type: llm.ContentText, Text: "Read the file /tmp/test.txt and tell me what it contains."}}}},
 		Tools: []llm.ToolDef{{
@@ -64,7 +64,7 @@ func TestMiniMaxToolCall(t *testing.T) {
 			fmt.Printf("  [error]: %v\n", ev.Err)
 		}
 	}
-	
+
 	if !hasToolUse {
 		t.Log("NOTE: No tool_use events received (model may not have called tool)")
 	}

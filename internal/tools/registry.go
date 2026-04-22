@@ -19,9 +19,9 @@ func New[In any](name, desc string, fn func(context.Context, In) (Result, error)
 	return typed[In]{name: name, desc: desc, run: fn, sch: SchemaOf[In]()}
 }
 
-func (t typed[In]) Name() string             { return t.name }
-func (t typed[In]) Description() string      { return t.desc }
-func (t typed[In]) Schema() map[string]any   { return t.sch }
+func (t typed[In]) Name() string           { return t.name }
+func (t typed[In]) Description() string    { return t.desc }
+func (t typed[In]) Schema() map[string]any { return t.sch }
 
 func (t typed[In]) Run(ctx context.Context, raw json.RawMessage) (Result, error) {
 	var in In

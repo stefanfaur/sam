@@ -132,6 +132,7 @@ func runTUI(ctx context.Context, cfg *config.Config, logger *slog.Logger, ring *
 		ProviderFactory: func(name, modelName string) (llm.Provider, error) {
 			return buildProvider(cfg, name, modelName)
 		},
+		ContextWindowFn: cfg.ModelContextWindow,
 	})
 	prog := tea.NewProgram(model, tea.WithContext(ctx))
 	if _, err := prog.Run(); err != nil {

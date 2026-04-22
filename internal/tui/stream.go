@@ -213,5 +213,5 @@ func safeGlamourRender(glam *glamour.TermRenderer, text string) (out string) {
 	if err != nil {
 		return text
 	}
-	return strings.TrimRight(rendered, "\n")
+	return strings.Trim(rendered, "\n")
 }

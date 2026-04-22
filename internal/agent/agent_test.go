@@ -147,7 +147,7 @@ func TestContextCancelMidStream(t *testing.T) {
 		{Type: llm.EventTextDelta, Text: " world"},
 		// No message_stop - this will cause stream to "hang"
 	}
-	
+
 	prov := fake.New(hangScript)
 
 	reg := tools.NewRegistry()
@@ -202,7 +202,7 @@ func TestMaxIterationsCap(t *testing.T) {
 		{Type: llm.EventToolUseStop, ToolUseID: "tool_1"},
 		{Type: llm.EventMessageStop, StopReason: "tool_use"},
 	}
-	
+
 	prov := fake.New(toolUseScript, toolUseScript, toolUseScript, toolUseScript)
 
 	tracker := tools.NewReadTracker()

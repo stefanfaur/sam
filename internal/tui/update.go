@@ -18,7 +18,21 @@ const (
 )
 
 func (m *Model) Init() tea.Cmd {
-	return m.input.Focus()
+	// Print a small banner up front so the TUI has breathing room above the
+	// input box when launched (otherwise the status bar/input sits flush
+	// against the shell prompt).
+	banner := lipgloss.NewStyle().
+		Foreground(m.theme.Accent).
+		Bold(true).
+		Render("✦ sam")
+	tag := lipgloss.NewStyle().
+		Foreground(lipgloss.Color("244")).
+		Italic(true).
+		Render(" — type /help for commands")
+	return tea.Sequence(
+		tea.Printf("\n%s%s\n", banner, tag),
+		m.input.Focus(),
+	)
 }
 
 func (m *Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
@@ -41,8 +55,17 @@ func (m *Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		m.scanner = &blockScanner{}
 		m.status.state = "idle"
 		m.status.iter = 0
+		m.spinner.on = false
 		m.input.Focus()
 		return m, nil
+
+	case spinnerTickMsg:
+		if m.pending == nil {
+			m.spinner.on = false
+			return m, nil
+		}
+		m.spinner.advance()
+		return m, tea.Tick(spinnerTickInterval, func(time.Time) tea.Msg { return spinnerTickMsg{} })
 
 	case quitMsg:
 		return m, tea.Quit
@@ -87,9 +110,7 @@ func (m *Model) resize(w, h int) {
 	}
 	m.debug.viewport = viewport.New(w, dbgH)
 	m.input.SetWidth(w - 4)
-	if gl, err := glamourForWidth(w); err == nil {
-		m.glam = gl
-	}
+	m.theme.Apply(w)
 }
 
 func (m *Model) View() string {
@@ -97,7 +118,9 @@ func (m *Model) View() string {
 		return m.debug.View(m.width, m.height)
 	}
 
-	var parts []string
+	// Leading blank line so the live view (input box + status) has breathing
+	// room against the last flushed assistant line in scrollback.
+	parts := []string{""}
 
 	// Live tail (uncommitted assistant text).
 	if m.pending != nil && m.pending.committed < len(m.pending.raw) {
@@ -107,11 +130,9 @@ func (m *Model) View() string {
 
 	// Thinking card.
 	if m.pending != nil && len(m.pending.thinkRaw) > 0 {
-		card := renderThinkingCard(string(m.pending.thinkRaw), true)
+		card := renderThinkingCard(m.theme, string(m.pending.thinkRaw), true)
 		parts = append(parts, card)
 	}
-
-	parts = append(parts, m.status.View(), "")
 
 	bottom := m.renderInputBox()
 	if m.modal != nil {
@@ -123,13 +144,17 @@ func (m *Model) View() string {
 	}
 	parts = append(parts, bottom)
 
+	for _, row := range m.StatusBar() {
+		parts = append(parts, row)
+	}
+
 	return lipgloss.JoinVertical(lipgloss.Left, parts...)
 }
 
 func (m *Model) renderInputBox() string {
-	style := inputBoxStyle
+	style := m.theme.InputBox
 	if m.input.Focused() {
-		style = inputBoxFocusStyle
+		style = m.theme.InputBoxFocus
 	}
 	if m.width > 4 {
 		style = style.Width(m.width - 2)
@@ -157,6 +182,7 @@ func (m *Model) handleKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 			m.pending = nil
 			m.scanner = &blockScanner{}
 			m.status.state = "cancelled"
+			m.spinner.on = false
 			m.lastCtrlC = now
 			m.input.Focus()
 			return m, nil
@@ -285,9 +311,9 @@ func (m *Model) renderSuggestions() string {
 	var b strings.Builder
 	for i, s := range m.suggest.matches {
 		if i == m.suggest.selected {
-			b.WriteString(suggestSelectedStyle.Render("› " + s))
+			b.WriteString(m.theme.SuggestSelected.Render("› " + s))
 		} else {
-			b.WriteString(suggestStyle.Render("  " + s))
+			b.WriteString(m.theme.Suggest.Render("  " + s))
 		}
 		b.WriteString("\n")
 	}
@@ -302,6 +328,11 @@ func (m *Model) startTurn(text string) (tea.Model, tea.Cmd) {
 	userMsg := m.renderUserMsg(text)
 	m.status.state = "thinking"
 	m.status.iter = 0
+	m.status.turnIn = 0
+	m.status.turnOut = 0
+	m.status.turnCacheRead = 0
+	m.turnStart = time.Now()
+	m.spinner.on = m.settings.Statusbar.Spinner
 	m.input.Blur()
 
 	events := m.agent.Submit(context.Background(), text)
@@ -310,7 +341,10 @@ func (m *Model) startTurn(text string) (tea.Model, tea.Cmd) {
 
 	return m, tea.Sequence(
 		tea.Printf("%s", userMsg),
-		waitAgent(events),
+		tea.Batch(
+			waitAgent(events),
+			tea.Tick(spinnerTickInterval, func(time.Time) tea.Msg { return spinnerTickMsg{} }),
+		),
 	)
 }
 
@@ -322,13 +356,23 @@ func (m *Model) dispatchCommand(cmd Command, arg string) (tea.Model, tea.Cmd) {
 	case CmdClear:
 		m.pending = nil
 		m.scanner = &blockScanner{}
-		return m, tea.ClearScreen
+		m.input.Reset()
+		m.suggest.active = false
+		return m, m.clearAndAnchorBottom()
 
 	case CmdReset:
 		m.agent.Reset()
 		m.pending = nil
 		m.scanner = &blockScanner{}
-		return m, tea.ClearScreen
+		m.status.lastIterIn = 0
+		m.status.turnIn = 0
+		m.status.turnOut = 0
+		m.status.turnCacheRead = 0
+		m.status.sessionIn = 0
+		m.status.sessionOut = 0
+		m.input.Reset()
+		m.suggest.active = false
+		return m, m.clearAndAnchorBottom()
 
 	case CmdModel:
 		if arg != "" {
@@ -342,31 +386,10 @@ func (m *Model) dispatchCommand(cmd Command, arg string) (tea.Model, tea.Cmd) {
 		m.input.Blur()
 		return m, m.modal.Init()
 
-	case CmdProvider:
-		if arg != "" {
-			if m.factory == nil {
-				m.input.Reset()
-				m.suggest.active = false
-				return m, m.addInfo("provider switch not available (no factory)")
-			}
-			prov, err := m.factory(arg, m.status.model)
-			if err != nil {
-				m.input.Reset()
-				m.suggest.active = false
-				return m, m.addInfo("provider build failed: " + err.Error())
-			}
-			m.agent.SetProvider(prov)
-			m.status.provider = arg
-			m.input.Reset()
-			m.suggest.active = false
-			return m, m.addInfo("provider set to " + arg)
-		}
-		m.modal = newProviderForm(m.status.provider, m.factory)
-		m.input.Blur()
-		return m, m.modal.Init()
-
-	case CmdAuth:
-		m.modal = newAuthForm(m.status.provider, m.factory)
+	case CmdSettings:
+		m.input.Reset()
+		m.suggest.active = false
+		m.modal = newSettingsModal(m.settings, m.status.provider, m.factory)
 		m.input.Blur()
 		return m, m.modal.Init()
 
@@ -392,7 +415,23 @@ func (m *Model) dispatchCommand(cmd Command, arg string) (tea.Model, tea.Cmd) {
 }
 
 func (m *Model) addInfo(text string) tea.Cmd {
-	return tea.Printf("%s", infoStyle.Render(text))
+	return tea.Printf("%s", m.theme.Info.Render(text))
+}
+
+// clearAndAnchorBottom empties the scrollback and pushes the live view
+// (input + status bar) to the bottom of the terminal by printing enough
+// blank lines to fill the height above.
+func (m *Model) clearAndAnchorBottom() tea.Cmd {
+	// Live view footprint: 1 leading blank + input box (3) + up to 2 status rows = ~6.
+	const liveRows = 6
+	blanks := m.height - liveRows
+	if blanks < 0 {
+		blanks = 0
+	}
+	return tea.Sequence(
+		tea.ClearScreen,
+		tea.Printf("%s", strings.Repeat("\n", blanks)),
+	)
 }
 
 func (m *Model) handleAgentEvent(msg agentEventMsg) (tea.Model, tea.Cmd) {
@@ -419,7 +458,7 @@ func (m *Model) handleAgentEvent(msg agentEventMsg) (tea.Model, tea.Cmd) {
 			return m, waitAgent(m.pending.events)
 		}
 		prefix := tail[:idx]
-		rendered := safeGlamourRender(m.glam, string(prefix))
+		rendered := safeGlamourRender(m.theme.Glamour(), string(prefix))
 		m.scanner.Advance(prefix)
 		m.pending.committed += idx
 		return m, tea.Sequence(
@@ -432,13 +471,13 @@ func (m *Model) handleAgentEvent(msg agentEventMsg) (tea.Model, tea.Cmd) {
 		var flushCmd tea.Cmd
 		if m.pending.committed < len(m.pending.raw) {
 			tail := m.pending.raw[m.pending.committed:]
-			rendered := safeGlamourRender(m.glam, string(tail))
+			rendered := safeGlamourRender(m.theme.Glamour(), string(tail))
 			m.scanner.Advance(tail)
 			m.pending.committed = len(m.pending.raw)
 			flushCmd = tea.Printf("%s", rendered)
 		}
 		m.pending.thinkRaw = nil
-		toolCallStr := renderToolCall(ev.Name, ev.Input)
+		toolCallStr := renderToolCall(m.theme, ev.Name, ev.Input)
 		cmds := []tea.Cmd{}
 		if flushCmd != nil {
 			cmds = append(cmds, flushCmd)
@@ -450,7 +489,7 @@ func (m *Model) handleAgentEvent(msg agentEventMsg) (tea.Model, tea.Cmd) {
 		return m, tea.Sequence(cmds...)
 
 	case agent.ToolResult:
-		result := renderToolResult(ev.Name, ev.Output, ev.IsError)
+		result := renderToolResult(m.theme, ev.Name, ev.Output, ev.IsError)
 		m.status.iter++
 		return m, tea.Sequence(
 			tea.Printf("%s", result),
@@ -463,9 +502,19 @@ func (m *Model) handleAgentEvent(msg agentEventMsg) (tea.Model, tea.Cmd) {
 		m.input.Blur()
 		return m, m.approval.Init()
 
+	case agent.UsageEvent:
+		m.status.lastIterIn = ev.InputTokens
+		m.status.turnIn += ev.InputTokens
+		m.status.turnOut += ev.OutputTokens
+		m.status.turnCacheRead += ev.CacheReadInput
+		m.status.sessionIn += ev.InputTokens
+		m.status.sessionOut += ev.OutputTokens
+		return m, waitAgent(m.pending.events)
+
 	case agent.ErrorEvent:
-		errorStr := renderError(ev.Err)
+		errorStr := renderError(m.theme, ev.Err)
 		m.status.state = "error"
+		m.spinner.on = false
 		return m, tea.Sequence(
 			tea.Printf("%s", errorStr),
 			waitAgent(m.pending.events),
@@ -476,13 +525,14 @@ func (m *Model) handleAgentEvent(msg agentEventMsg) (tea.Model, tea.Cmd) {
 		var flush tea.Cmd
 		if m.pending.committed < len(m.pending.raw) {
 			tail := m.pending.raw[m.pending.committed:]
-			rendered := safeGlamourRender(m.glam, string(tail))
+			rendered := safeGlamourRender(m.theme.Glamour(), string(tail))
 			m.pending.committed = len(m.pending.raw)
 			flush = tea.Printf("%s", rendered)
 		}
 		m.pending = nil
 		m.scanner = &blockScanner{}
 		m.status.state = "idle"
+		m.spinner.on = false
 		m.input.Focus()
 		cmds := []tea.Cmd{}
 		if flush != nil {
@@ -495,12 +545,12 @@ func (m *Model) handleAgentEvent(msg agentEventMsg) (tea.Model, tea.Cmd) {
 	return m, waitAgent(m.pending.events)
 }
 
-func renderThinkingCard(text string, streaming bool) string {
-	header := thinkingHeaderStyle.Render("✦ thinking")
+func renderThinkingCard(t *Theme, text string, streaming bool) string {
+	header := t.ThinkingHeader.Render("✦ thinking")
 	body := strings.TrimRight(text, "\n")
-	return thinkingStyle.Render(header + "\n" + body)
+	return t.Thinking.Render(header + "\n" + body)
 }
 
 func (m *Model) renderUserMsg(text string) string {
-	return userMsgStyle.Render("> " + text)
+	return m.theme.UserMsg.Render("> " + text)
 }

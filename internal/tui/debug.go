@@ -8,8 +8,11 @@ import (
 )
 
 func (d debugModel) View(width, height int) string {
+	if d.theme == nil {
+		return "debug panel: no theme configured"
+	}
 	if d.ring == nil {
-		return debugPanelStyle.Render("debug panel: no ring configured")
+		return d.theme.DebugPanel.Render("debug panel: no ring configured")
 	}
 	entries := d.ring.Entries()
 	var sb strings.Builder
@@ -32,5 +35,5 @@ func (d debugModel) View(width, height int) string {
 	if h < 5 {
 		h = 5
 	}
-	return debugPanelStyle.Width(w).Height(h).Render(sb.String())
+	return d.theme.DebugPanel.Width(w).Height(h).Render(sb.String())
 }

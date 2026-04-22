@@ -36,7 +36,6 @@ func readSSEStream(r io.Reader, ch chan<- llm.StreamEvent) {
 
 		eventType, _ := raw["type"].(string)
 
-
 		switch eventType {
 		case "message_start":
 			ch <- llm.StreamEvent{Type: llm.EventMessageStart}

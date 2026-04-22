@@ -28,25 +28,25 @@ type Agent struct {
 	maxIters  int
 	launchDir string
 
-	history    []llm.Message
-	readFiles  map[string]struct{}
+	history   []llm.Message
+	readFiles map[string]struct{}
 
-	in  chan submit
-	mu  sync.Mutex // protects cancelTurn
+	in         chan submit
+	mu         sync.Mutex // protects cancelTurn
 	cancelTurn context.CancelFunc
-	log *slog.Logger
+	log        *slog.Logger
 }
 
 type Options struct {
-	Provider   llm.Provider
-	Tools      *tools.Registry
-	Policy     *policy.Policy
-	System     string
-	Model      string
-	MaxTokens  int
-	MaxIters   int
-	LaunchDir  string
-	Logger     *slog.Logger
+	Provider  llm.Provider
+	Tools     *tools.Registry
+	Policy    *policy.Policy
+	System    string
+	Model     string
+	MaxTokens int
+	MaxIters  int
+	LaunchDir string
+	Logger    *slog.Logger
 }
 
 func New(opts Options) *Agent {
@@ -65,18 +65,18 @@ func New(opts Options) *Agent {
 	}
 
 	return &Agent{
-		provider:   opts.Provider,
-		tools:      opts.Tools,
-		policy:     opts.Policy,
-		system:     opts.System,
-		model:      opts.Model,
-		maxTokens:  opts.MaxTokens,
-		maxIters:   opts.MaxIters,
-		launchDir:  opts.LaunchDir,
-		readFiles:  make(map[string]struct{}),
-		in:         make(chan submit, 1),
-		history:    []llm.Message{},
-		log:        opts.Logger,
+		provider:  opts.Provider,
+		tools:     opts.Tools,
+		policy:    opts.Policy,
+		system:    opts.System,
+		model:     opts.Model,
+		maxTokens: opts.MaxTokens,
+		maxIters:  opts.MaxIters,
+		launchDir: opts.LaunchDir,
+		readFiles: make(map[string]struct{}),
+		in:        make(chan submit, 1),
+		history:   []llm.Message{},
+		log:       opts.Logger,
 	}
 }
 

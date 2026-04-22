@@ -61,13 +61,15 @@ const (
 )
 
 type StreamEvent struct {
-	Type         StreamEventType
-	Text         string
-	ToolUseID    string
-	ToolName     string
-	PartialJSON  string
-	StopReason   string
-	InputTokens  int
-	OutputTokens int
-	Err          error
+	Type               StreamEventType
+	Text               string
+	ToolUseID          string
+	ToolName           string
+	PartialJSON        string
+	StopReason         string
+	InputTokens        int
+	OutputTokens       int
+	CacheReadInput     int
+	CacheCreationInput int
+	Err                error
 }

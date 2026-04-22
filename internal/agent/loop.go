@@ -14,7 +14,7 @@ import (
 func (a *Agent) turn(ctx context.Context, s submit) {
 	// Add user message to history
 	a.history = append(a.history, llm.Message{
-		Role: llm.RoleUser,
+		Role:    llm.RoleUser,
 		Content: []llm.ContentBlock{{Type: llm.ContentText, Text: s.userMsg}},
 	})
 
@@ -136,6 +136,14 @@ func (a *Agent) consumeStream(ctx context.Context, req llm.Request, out chan Eve
 			currentTool.name = ""
 
 		case llm.EventMessageStop:
+			if ev.InputTokens > 0 || ev.OutputTokens > 0 || ev.CacheReadInput > 0 || ev.CacheCreationInput > 0 {
+				emitToChan(out, UsageEvent{
+					InputTokens:        ev.InputTokens,
+					OutputTokens:       ev.OutputTokens,
+					CacheReadInput:     ev.CacheReadInput,
+					CacheCreationInput: ev.CacheCreationInput,
+				}, reqCtx)
+			}
 			emitToChan(out, MessageEnd{StopReason: ev.StopReason}, reqCtx)
 			return msg, pending, ev.StopReason, nil
 

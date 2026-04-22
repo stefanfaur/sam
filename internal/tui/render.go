@@ -6,9 +6,9 @@ import (
 	"strings"
 )
 
-func renderToolCall(name string, input json.RawMessage) string {
+func renderToolCall(t *Theme, name string, input json.RawMessage) string {
 	preview := toolInputPreview(name, input)
-	return toolHeaderStyle.Render("● "+name) + "  " + toolInputStyle.Render(preview)
+	return t.ToolHeader.Render("● "+name) + "  " + t.ToolInput.Render(preview)
 }
 
 func toolInputPreview(name string, input json.RawMessage) string {
@@ -46,7 +46,7 @@ func truncate(s string, n int) string {
 	return s[:n] + "…"
 }
 
-func renderToolResult(name, output string, isError bool) string {
+func renderToolResult(t *Theme, name, output string, isError bool) string {
 	lines := strings.Split(strings.TrimRight(output, "\n"), "\n")
 	limit := 10
 	more := 0
@@ -59,14 +59,14 @@ func renderToolResult(name, output string, isError bool) string {
 		body += fmt.Sprintf("\n… %d more lines", more)
 	}
 	if isError {
-		return toolErrorStyle.Render("✗ "+name+":\n") + toolErrorStyle.Render(body)
+		return t.ToolError.Render("✗ "+name+":\n") + t.ToolError.Render(body)
 	}
-	return toolResultStyle.Render(body)
+	return t.ToolResult.Render(body)
 }
 
-func renderError(err error) string {
+func renderError(t *Theme, err error) string {
 	if err == nil {
 		return ""
 	}
-	return toolErrorStyle.Render("✗ error: " + err.Error())
+	return t.ToolError.Render("✗ error: " + err.Error())
 }

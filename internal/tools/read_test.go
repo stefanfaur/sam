@@ -10,7 +10,7 @@ import (
 func TestReadRelativePath(t *testing.T) {
 	tracker := NewReadTracker()
 	tool := NewRead(tracker)
-	
+
 	result, err := tool.Run(context.Background(), []byte(`{"file_path": "relative/path.go"}`))
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
@@ -23,7 +23,7 @@ func TestReadRelativePath(t *testing.T) {
 func TestReadNonExistent(t *testing.T) {
 	tracker := NewReadTracker()
 	tool := NewRead(tracker)
-	
+
 	result, err := tool.Run(context.Background(), []byte(`{"file_path": "/nonexistent/file.go"}`))
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
@@ -41,10 +41,10 @@ func TestReadSuccess(t *testing.T) {
 	if err := os.WriteFile(tmpFile, []byte(content), 0644); err != nil {
 		t.Fatalf("failed to create temp file: %v", err)
 	}
-	
+
 	tracker := NewReadTracker()
 	tool := NewRead(tracker)
-	
+
 	result, err := tool.Run(context.Background(), []byte(`{"file_path": "`+tmpFile+`"}`))
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
@@ -55,7 +55,7 @@ func TestReadSuccess(t *testing.T) {
 	if len(result.Output) == 0 {
 		t.Error("expected output")
 	}
-	
+
 	// Verify tracker was updated
 	if !tracker.Seen(tmpFile) {
 		t.Error("expected file to be tracked as read")
@@ -77,10 +77,10 @@ func TestReadOffsetLimit(t *testing.T) {
 	if err := os.WriteFile(tmpFile, []byte(content), 0644); err != nil {
 		t.Fatalf("failed to create temp file: %v", err)
 	}
-	
+
 	tracker := NewReadTracker()
 	tool := NewRead(tracker)
-	
+
 	// Read with offset 3, limit 5
 	result, err := tool.Run(context.Background(), []byte(`{"file_path": "`+tmpFile+`", "offset": 3, "limit": 5}`))
 	if err != nil {
@@ -100,10 +100,10 @@ func TestReadBinaryFile(t *testing.T) {
 	if err := os.WriteFile(tmpFile, binaryContent, 0644); err != nil {
 		t.Fatalf("failed to create temp file: %v", err)
 	}
-	
+
 	tracker := NewReadTracker()
 	tool := NewRead(tracker)
-	
+
 	result, err := tool.Run(context.Background(), []byte(`{"file_path": "`+tmpFile+`"}`))
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)

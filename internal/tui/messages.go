@@ -9,6 +9,7 @@ type agentEventMsg struct{ Ev Event }
 type submitMsg struct{ text string }
 type turnClosedMsg struct{}
 type quitMsg struct{}
+type spinnerTickMsg struct{}
 type approvalDoneMsg struct {
 	req      agent.ApprovalRequest
 	decision agent.ApprovalDecision
