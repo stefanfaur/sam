@@ -49,21 +49,21 @@ var (
 			Padding(0, 1)
 
 	thinkingHeaderStyle = lipgloss.NewStyle().
-			Foreground(lipgloss.Color("245")).
-			Bold(true).
-			Italic(true)
+				Foreground(lipgloss.Color("245")).
+				Bold(true).
+				Italic(true)
 
 	suggestStyle = lipgloss.NewStyle().
 			Foreground(lipgloss.Color("245"))
 
 	suggestSelectedStyle = lipgloss.NewStyle().
-			Foreground(lipgloss.Color("252")).
-			Background(lipgloss.Color("238")).
-			Bold(true)
+				Foreground(lipgloss.Color("252")).
+				Background(lipgloss.Color("238")).
+				Bold(true)
 
 	inputPromptStyle = lipgloss.NewStyle().
-			Foreground(lipgloss.Color("63")).
-			Bold(true)
+				Foreground(lipgloss.Color("63")).
+				Bold(true)
 
 	inputBoxStyle = lipgloss.NewStyle().
 			Border(lipgloss.RoundedBorder()).
@@ -71,9 +71,9 @@ var (
 			Padding(0, 1)
 
 	inputBoxFocusStyle = lipgloss.NewStyle().
-			Border(lipgloss.RoundedBorder()).
-			BorderForeground(lipgloss.Color("63")).
-			Padding(0, 1)
+				Border(lipgloss.RoundedBorder()).
+				BorderForeground(lipgloss.Color("63")).
+				Padding(0, 1)
 )
 
 func glamourForWidth(w int) (*glamour.TermRenderer, error) {

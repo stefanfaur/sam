@@ -131,7 +131,7 @@ func newModelForm(provider, current string) *modelForm {
 
 	m.form = huh.NewForm(
 		huh.NewGroup(
-			huh.NewNote().Title("Select model for " + provider),
+			huh.NewNote().Title("Select model for "+provider),
 			huh.NewSelect[string]().
 				Title("Model").
 				Options(opts...).Value(&m.choice),
