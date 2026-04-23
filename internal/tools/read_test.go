@@ -9,7 +9,7 @@ import (
 
 func TestReadRelativePath(t *testing.T) {
 	tracker := NewReadTracker()
-	tool := NewRead(tracker)
+	tool := NewRead(tracker, "test")
 
 	result, err := tool.Run(context.Background(), []byte(`{"file_path": "relative/path.go"}`))
 	if err != nil {
@@ -22,7 +22,7 @@ func TestReadRelativePath(t *testing.T) {
 
 func TestReadNonExistent(t *testing.T) {
 	tracker := NewReadTracker()
-	tool := NewRead(tracker)
+	tool := NewRead(tracker, "test")
 
 	result, err := tool.Run(context.Background(), []byte(`{"file_path": "/nonexistent/file.go"}`))
 	if err != nil {
@@ -43,7 +43,7 @@ func TestReadSuccess(t *testing.T) {
 	}
 
 	tracker := NewReadTracker()
-	tool := NewRead(tracker)
+	tool := NewRead(tracker, "test")
 
 	result, err := tool.Run(context.Background(), []byte(`{"file_path": "`+tmpFile+`"}`))
 	if err != nil {
@@ -79,7 +79,7 @@ func TestReadOffsetLimit(t *testing.T) {
 	}
 
 	tracker := NewReadTracker()
-	tool := NewRead(tracker)
+	tool := NewRead(tracker, "test")
 
 	// Read with offset 3, limit 5
 	result, err := tool.Run(context.Background(), []byte(`{"file_path": "`+tmpFile+`", "offset": 3, "limit": 5}`))
@@ -102,7 +102,7 @@ func TestReadBinaryFile(t *testing.T) {
 	}
 
 	tracker := NewReadTracker()
-	tool := NewRead(tracker)
+	tool := NewRead(tracker, "test")
 
 	result, err := tool.Run(context.Background(), []byte(`{"file_path": "`+tmpFile+`"}`))
 	if err != nil {

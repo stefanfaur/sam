@@ -1,0 +1,1 @@
+Read the contents of a file from disk. Returns the file contents with line numbers. Use this when you need to see the content of a file. Supports offset and limit parameters for large files.

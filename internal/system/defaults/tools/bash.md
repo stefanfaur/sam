@@ -1,0 +1,1 @@
+Execute a shell command via bash -c. Stdout, stderr, and a non-zero exit code are returned in the output. Use for anything that needs the shell.

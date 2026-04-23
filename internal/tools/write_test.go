@@ -8,7 +8,7 @@ import (
 )
 
 func TestWriteRelativePath(t *testing.T) {
-	tool := NewWrite(NewReadTracker())
+	tool := NewWrite(NewReadTracker(), "test")
 	r, _ := tool.Run(context.Background(), []byte(`{"file_path":"rel.txt","content":"x"}`))
 	if !r.IsError {
 		t.Fatal("expected error for relative path")
@@ -17,7 +17,7 @@ func TestWriteRelativePath(t *testing.T) {
 
 func TestWriteNewFile(t *testing.T) {
 	tr := NewReadTracker()
-	tool := NewWrite(tr)
+	tool := NewWrite(tr, "test")
 	p := filepath.Join(t.TempDir(), "new.txt")
 	r, _ := tool.Run(context.Background(), []byte(`{"file_path":"`+p+`","content":"hello"}`))
 	if r.IsError {
@@ -34,7 +34,7 @@ func TestWriteNewFile(t *testing.T) {
 
 func TestWriteRefuseOverwriteWithoutRead(t *testing.T) {
 	tr := NewReadTracker()
-	tool := NewWrite(tr)
+	tool := NewWrite(tr, "test")
 	p := filepath.Join(t.TempDir(), "exists.txt")
 	if err := os.WriteFile(p, []byte("old"), 0644); err != nil {
 		t.Fatal(err)
@@ -51,7 +51,7 @@ func TestWriteRefuseOverwriteWithoutRead(t *testing.T) {
 
 func TestWriteOverwriteAfterRead(t *testing.T) {
 	tr := NewReadTracker()
-	tool := NewWrite(tr)
+	tool := NewWrite(tr, "test")
 	p := filepath.Join(t.TempDir(), "exists.txt")
 	if err := os.WriteFile(p, []byte("old"), 0644); err != nil {
 		t.Fatal(err)
@@ -68,7 +68,7 @@ func TestWriteOverwriteAfterRead(t *testing.T) {
 }
 
 func TestWriteMissingParent(t *testing.T) {
-	tool := NewWrite(NewReadTracker())
+	tool := NewWrite(NewReadTracker(), "test")
 	p := filepath.Join(t.TempDir(), "nope", "x.txt")
 	r, _ := tool.Run(context.Background(), []byte(`{"file_path":"`+p+`","content":"x"}`))
 	if !r.IsError {

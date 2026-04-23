@@ -18,17 +18,10 @@ import (
 	"github.com/stefanfaur/sam/internal/logging"
 	"github.com/stefanfaur/sam/internal/policy"
 	"github.com/stefanfaur/sam/internal/skills"
+	"github.com/stefanfaur/sam/internal/system"
 	"github.com/stefanfaur/sam/internal/tools"
 	"github.com/stefanfaur/sam/internal/tui"
 )
-
-const defaultSystemPrompt = `You are SAM, a coding assistant. You have access to tools:
-- Read: Read file contents (requires absolute path)
-- Write: Write files (requires Read first for existing files)
-- Edit: Edit files with exact string replacement
-- Bash: Execute shell commands
-
-Use tools when appropriate to fulfill user requests.`
 
 func main() {
 	prompt := flag.String("p", "", "one-shot prompt; omit for interactive")
@@ -51,18 +44,23 @@ func main() {
 
 	logger, ring, _ := logging.Setup(logging.DefaultStateDir())
 
+	sysDir := system.DefaultDir()
+	if err := system.Seed(sysDir, logger); err != nil {
+		logger.Warn("system seed failed", "err", err)
+	}
+
 	ctx, stop := signal.NotifyContext(context.Background(), os.Interrupt, syscall.SIGTERM)
 	defer stop()
 
 	if *prompt != "" {
-		if err := runAgentOneShot(ctx, cfg, *prompt, logger); err != nil {
+		if err := runAgentOneShot(ctx, cfg, sysDir, *prompt, logger); err != nil {
 			fmt.Fprintln(os.Stderr, "error:", err)
 			os.Exit(1)
 		}
 		return
 	}
 
-	runTUI(ctx, cfg, logger, ring)
+	runTUI(ctx, cfg, sysDir, logger, ring)
 }
 
 func mustProvider(cfg *config.Config) llm.Provider {
@@ -87,24 +85,35 @@ func buildProvider(cfg *config.Config, name, model string) (llm.Provider, error)
 	return registry.Build(entry, model, resolver)
 }
 
-func buildRegistry(cwd string) (*tools.Registry, *tools.ReadTracker) {
+func buildRegistry(cwd, sysDir string) (*tools.Registry, *tools.ReadTracker) {
+	desc := func(name string) string {
+		s, _ := system.LoadToolDescription(sysDir, name)
+		if s == "" {
+			s = system.EmbeddedToolDescription(name)
+		}
+		return s
+	}
 	tracker := tools.NewReadTracker()
 	reg := tools.NewRegistry()
-	reg.Register(tools.NewRead(tracker))
-	reg.Register(tools.NewWrite(tracker))
-	reg.Register(tools.NewEdit(tracker))
-	reg.Register(tools.NewBash(cwd))
+	reg.Register(tools.NewRead(tracker, desc("Read")))
+	reg.Register(tools.NewWrite(tracker, desc("Write")))
+	reg.Register(tools.NewEdit(tracker, desc("Edit")))
+	reg.Register(tools.NewBash(cwd, desc("Bash")))
 	return reg, tracker
 }
 
-func runTUI(ctx context.Context, cfg *config.Config, logger *slog.Logger, ring *logging.Ring) {
+func runTUI(ctx context.Context, cfg *config.Config, sysDir string, logger *slog.Logger, ring *logging.Ring) {
 	cwd, _ := os.Getwd()
-	registry, _ := buildRegistry(cwd)
+	registry, _ := buildRegistry(cwd, sysDir)
 
 	pol := policy.Default()
 	prov := mustProvider(cfg)
 
-	sys := cfg.LoadSystemPrompt(defaultSystemPrompt)
+	diskPrompt, _ := system.LoadSystemPrompt(sysDir)
+	if diskPrompt == "" {
+		diskPrompt = system.EmbeddedPrompt()
+	}
+	sys := cfg.LoadSystemPrompt(diskPrompt)
 
 	skillReg := buildSkillsRegistry(cwd, logger)
 
@@ -164,12 +173,16 @@ func buildSkillsRegistry(cwd string, logger *slog.Logger) *skills.Registry {
 	return reg
 }
 
-func runAgentOneShot(ctx context.Context, cfg *config.Config, prompt string, logger *slog.Logger) error {
+func runAgentOneShot(ctx context.Context, cfg *config.Config, sysDir, prompt string, logger *slog.Logger) error {
 	cwd, _ := os.Getwd()
-	registry, _ := buildRegistry(cwd)
+	registry, _ := buildRegistry(cwd, sysDir)
 	pol := policy.AllowAll()
 	prov := mustProvider(cfg)
-	sys := cfg.LoadSystemPrompt(defaultSystemPrompt)
+	diskPrompt, _ := system.LoadSystemPrompt(sysDir)
+	if diskPrompt == "" {
+		diskPrompt = system.EmbeddedPrompt()
+	}
+	sys := cfg.LoadSystemPrompt(diskPrompt)
 
 	a := agent.New(agent.Options{
 		Provider:  prov,

@@ -107,6 +107,38 @@ env var is already set in the environment.
 | `SAM_MODEL`          | Override default model (bare or `provider/model`) |
 | `XDG_CONFIG_HOME`    | Override config directory |
 
+### System prompt and tool descriptions
+
+On first run SAM seeds `~/.sam/system/` with the built-in defaults:
+
+```
+~/.sam/system/
+  system-prompt.md
+  tools/
+    read.md
+    write.md
+    edit.md
+    bash.md
+  .seed-manifest.json
+```
+
+Edit any file to customize SAM's behavior. User edits are preserved across
+upgrades — the manifest tracks sha256 hashes so new defaults only overwrite
+files you have not touched. Delete a file (and its entry in
+`.seed-manifest.json`) to force a re-seed from the embedded default.
+
+System prompt precedence (first non-empty wins):
+
+1. `--system-prompt <file>` CLI flag
+2. `system_prompt_file` in `config.toml`
+3. `~/.sam/system/system-prompt.md`
+4. Built-in embedded default
+
+Tool descriptions follow `~/.sam/system/tools/<name>.md` → embedded default.
+
+Set `$SAM_HOME` to relocate the SAM root (default `~/.sam`); the system
+directory always lives under it.
+
 ### Migration from pre-map config
 
 The nested `[providers.minimax]` / `[providers.anthropic]` blocks are still

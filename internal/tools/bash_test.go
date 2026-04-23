@@ -9,7 +9,7 @@ import (
 
 func runBashTool(t *testing.T, cwd string, in string) Result {
 	t.Helper()
-	r, err := NewBash(cwd).Run(context.Background(), []byte(in))
+	r, err := NewBash(cwd, "test").Run(context.Background(), []byte(in))
 	if err != nil {
 		t.Fatalf("run error: %v", err)
 	}

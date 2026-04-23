@@ -12,10 +12,8 @@ type WriteInput struct {
 	Content  string `json:"content" jsonschema:"required,description=Full file contents to write."`
 }
 
-var writeDescription = "Write content to a file. The file must be absolute path."
-
-func NewWrite(tracker *ReadTracker) Tool {
-	return New[WriteInput]("Write", writeDescription, func(ctx context.Context, in WriteInput) (Result, error) {
+func NewWrite(tracker *ReadTracker, description string) Tool {
+	return New[WriteInput]("Write", description, func(ctx context.Context, in WriteInput) (Result, error) {
 		return runWrite(ctx, in, tracker)
 	})
 }

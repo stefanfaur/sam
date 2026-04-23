@@ -24,8 +24,6 @@ const (
 	bashOutputLimit    = 30 * 1024
 )
 
-var bashDescription = "Execute a shell command via bash -c. Stdout, stderr, and a non-zero exit code are returned in the output. Use for anything that needs the shell."
-
 type limitedWriter struct {
 	w         io.Writer
 	n         int
@@ -53,8 +51,8 @@ func (lw *limitedWriter) Write(p []byte) (int, error) {
 	return n, err
 }
 
-func NewBash(launchDir string) Tool {
-	return New[BashInput]("Bash", bashDescription, func(ctx context.Context, in BashInput) (Result, error) {
+func NewBash(launchDir, description string) Tool {
+	return New[BashInput]("Bash", description, func(ctx context.Context, in BashInput) (Result, error) {
 		return runBash(ctx, in, launchDir)
 	})
 }

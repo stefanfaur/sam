@@ -15,10 +15,8 @@ type EditInput struct {
 	ReplaceAll bool   `json:"replace_all,omitempty" jsonschema:"description=Replace all occurrences instead of requiring uniqueness."`
 }
 
-var editDescription = "Edit a file by replacing exact text. Must Read file first."
-
-func NewEdit(tracker *ReadTracker) Tool {
-	return New[EditInput]("Edit", editDescription, func(ctx context.Context, in EditInput) (Result, error) {
+func NewEdit(tracker *ReadTracker, description string) Tool {
+	return New[EditInput]("Edit", description, func(ctx context.Context, in EditInput) (Result, error) {
 		return runEdit(ctx, in, tracker)
 	})
 }

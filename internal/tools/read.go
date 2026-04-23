@@ -23,8 +23,6 @@ const (
 	maxLineWidth     = 2000
 )
 
-var readDescription = "Read the contents of a file from disk. Returns the file contents with line numbers. Use this when you need to see the content of a file. Supports offset and limit parameters for large files."
-
 // ReadTracker tracks which files have been read in a session
 type ReadTracker struct {
 	mu   sync.RWMutex
@@ -48,8 +46,8 @@ func (r *ReadTracker) Seen(p string) bool {
 	return ok
 }
 
-func NewRead(tracker *ReadTracker) Tool {
-	return New[ReadInput]("Read", readDescription, func(ctx context.Context, in ReadInput) (Result, error) {
+func NewRead(tracker *ReadTracker, description string) Tool {
+	return New[ReadInput]("Read", description, func(ctx context.Context, in ReadInput) (Result, error) {
 		return runRead(ctx, in, tracker)
 	})
 }

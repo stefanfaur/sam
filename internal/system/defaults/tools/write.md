@@ -1,0 +1,1 @@
+Write content to a file. The file must be absolute path.
