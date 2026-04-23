@@ -295,9 +295,15 @@ func renderThinkingCard(t *Theme, tc *thinkingCardState, now time.Time,
 		)
 		return t.ThinkingCard.Render(header)
 	}
-	// Full mode (default).
+	// Full mode (default). Force body wrap to fit within the card's inner
+	// width (outer border+padding = 4) so long single-line thinking streams
+	// don't overflow the terminal and get truncated.
+	bodyWidth := innerWidth - 4
+	if bodyWidth < 1 {
+		bodyWidth = 1
+	}
 	header := t.ToolCardHeader.Render(fmt.Sprintf("%s thinking…", spinner))
-	body := t.ThinkingCardBody.Render(strings.TrimRight(tc.Text, "\n"))
+	body := t.ThinkingCardBody.Width(bodyWidth).Render(strings.TrimRight(tc.Text, "\n"))
 	return t.ThinkingCard.Render(header + "\n" + body)
 }
 
