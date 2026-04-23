@@ -32,9 +32,8 @@ func NewProvider(entry config.ProviderEntry, model string, effortResolver func(s
 	if entry.APIKeyEnv != "" {
 		apiKey = os.Getenv(entry.APIKeyEnv)
 	}
-	if caps.AuthHeader != "none" && apiKey == "" {
-		return nil, fmt.Errorf("openaicompat: %s missing (provider %s)", entry.APIKeyEnv, entry.Name)
-	}
+	// Missing key is surfaced by Stream; construction stays non-fatal so the
+	// TUI can boot and let the user run /auth to fill it in.
 	client := NewClient(ClientOptions{
 		APIKey:         apiKey,
 		BaseURL:        entry.BaseURL,

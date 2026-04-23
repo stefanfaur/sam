@@ -46,7 +46,7 @@ default_model = "gpt-4o-mini"
 
 [providers.arcee]
 wire             = "openai"
-base_url         = "https://conductor.arcee.ai/v1"
+base_url         = "https://api.arcee.ai/api/v1"
 api_key_env      = "ARCEE_API_KEY"
 default_model    = "trinity-large-thinking"
 parse_think_tags = false            # flip to true for self-hosted reasoning

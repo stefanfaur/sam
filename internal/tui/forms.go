@@ -93,5 +93,6 @@ func (m *modelForm) Apply(root *Model) tea.Cmd {
 	}
 	root.agent.SetModel(name)
 	root.status.model = name
+	root.persistSelection()
 	return root.addInfo("model set to " + name)
 }

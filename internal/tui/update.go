@@ -402,10 +402,12 @@ func (m *Model) dispatchCommand(cmd Command, arg string, sk *skills.Skill) (tea.
 	case CmdProvider:
 		m.input.Reset()
 		m.suggest.active = false
-		if arg == "" {
-			return m, m.addInfo(m.providerListSummary())
+		if arg != "" {
+			return m, m.switchProvider(arg, "")
 		}
-		return m, m.switchProvider(arg, "")
+		m.modal = newProviderForm(m.providers, m.status.provider)
+		m.input.Blur()
+		return m, m.modal.Init()
 
 	case CmdAuth:
 		m.input.Reset()

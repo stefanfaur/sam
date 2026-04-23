@@ -103,7 +103,7 @@ func TestProviderLiveArcee(t *testing.T) {
 	entry := config.ProviderEntry{
 		Name:         "arcee",
 		Wire:         "openai",
-		BaseURL:      "https://conductor.arcee.ai/v1",
+		BaseURL:      "https://api.arcee.ai/api/v1",
 		APIKeyEnv:    "ARCEE_API_KEY",
 		DefaultModel: "trinity-large-thinking",
 	}

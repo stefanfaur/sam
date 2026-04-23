@@ -22,6 +22,7 @@ func (m *Model) applyModelSpec(spec string) tea.Cmd {
 	}
 	m.agent.SetModel(model)
 	m.status.model = model
+	m.persistSelection()
 	return m.addInfo(fmt.Sprintf("model set to %s/%s", provider, model))
 }
 
@@ -46,7 +47,17 @@ func (m *Model) switchProvider(name, model string) tea.Cmd {
 	m.agent.SetModel(model)
 	m.status.provider = name
 	m.status.model = model
+	m.persistSelection()
 	return m.addInfo(fmt.Sprintf("switched to %s/%s", name, model))
+}
+
+// persistSelection writes the current provider/model to state.toml so the
+// next TUI launch starts with the same combo.
+func (m *Model) persistSelection() {
+	_ = config.SaveState(config.State{
+		Provider: m.status.provider,
+		Model:    m.status.model,
+	})
 }
 
 // providerListSummary renders a compact provider table — one row per entry
@@ -77,7 +88,9 @@ func (m *Model) providerListSummary() string {
 func (m *Model) handleAuth(arg string) tea.Cmd {
 	arg = strings.TrimSpace(arg)
 	if arg == "" {
-		return m.addInfo(m.providerListSummary())
+		m.modal = newAuthPicker(m.providers, m.status.provider)
+		m.input.Blur()
+		return m.modal.Init()
 	}
 	if _, ok := m.providers[arg]; !ok {
 		return m.addInfo(fmt.Sprintf("unknown provider %q", arg))

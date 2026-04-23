@@ -347,6 +347,7 @@ func (m *settingsModal) applyProviders(root *Model) tea.Cmd {
 		root.agent.SetModel(model)
 		root.status.provider = m.provider
 		root.status.model = model
+		root.persistSelection()
 	}
 	return nil
 }

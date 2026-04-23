@@ -28,7 +28,7 @@ func Presets() map[string]ProviderEntry {
 		"arcee": {
 			Name:         "arcee",
 			Wire:         "openai",
-			BaseURL:      "https://conductor.arcee.ai/v1",
+			BaseURL:      "https://api.arcee.ai/api/v1",
 			APIKeyEnv:    "ARCEE_API_KEY",
 			DefaultModel: "trinity-large-thinking",
 			// §0 probe pending: Conductor default assumes reasoning_content

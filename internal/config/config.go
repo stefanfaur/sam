@@ -149,6 +149,15 @@ func Load(over Overrides) (*Config, error) {
 		}
 	}
 
+	// Persisted TUI selection overlays config.toml but loses to env + CLI.
+	st := LoadState()
+	if st.Provider != "" {
+		cfg.Provider = st.Provider
+	}
+	if st.Model != "" {
+		cfg.Model = st.Model
+	}
+
 	// env (provider + model fallback)
 	if v := os.Getenv("SAM_PROVIDER"); v != "" {
 		cfg.Provider = v
