@@ -89,6 +89,14 @@ func (a *Agent) consumeStream(ctx context.Context, req llm.Request, out chan Eve
 
 		case llm.EventThinkingDelta:
 			emitToChan(out, ThinkingDelta{Text: ev.Text}, reqCtx)
+			if n := len(msg.Content); n > 0 && msg.Content[n-1].Type == llm.ContentThinking {
+				msg.Content[n-1].Text += ev.Text
+			} else {
+				msg.Content = append(msg.Content, llm.ContentBlock{
+					Type: llm.ContentThinking,
+					Text: ev.Text,
+				})
+			}
 
 		case llm.EventTextDelta:
 			emitToChan(out, TextDelta{Text: ev.Text}, reqCtx)

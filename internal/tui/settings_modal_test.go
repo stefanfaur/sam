@@ -29,7 +29,7 @@ func TestSettingsModalApplyCancelled(t *testing.T) {
 	t.Setenv("XDG_CONFIG_HOME", t.TempDir())
 	root := newApplyRoot(t)
 	original := root.settings
-	mm := newSettingsModal(root.settings, "anthropic", nil, nil)
+	mm := newSettingsModal(root.settings, "anthropic", nil, nil, nil)
 	mm.cancelled = true
 	cmd := mm.Apply(root)
 	if cmd == nil {
@@ -48,7 +48,7 @@ func TestSettingsModalApplyPersists(t *testing.T) {
 	dir := t.TempDir()
 	t.Setenv("XDG_CONFIG_HOME", dir)
 	root := newApplyRoot(t)
-	mm := newSettingsModal(root.settings, "anthropic", nil, nil)
+	mm := newSettingsModal(root.settings, "anthropic", nil, nil, nil)
 	mm.pending.Statusbar.Layout = "one-line"
 	mm.pending.Theme.Accent = "#abcdef"
 	cmd := mm.Apply(root)
@@ -76,7 +76,7 @@ func TestSettingsModalTabNavReachesSkills(t *testing.T) {
 		skills.Overrides{}, skills.TrustList{}, BuiltinNames, nil,
 	)
 	reg.Load()
-	mm := newSettingsModal(DefaultSettings(), "anthropic", nil, reg)
+	mm := newSettingsModal(DefaultSettings(), "anthropic", nil, reg, nil)
 	if mm.active != tabStatusline {
 		t.Fatalf("initial tab = %v, want tabStatusline", mm.active)
 	}
@@ -101,7 +101,7 @@ func TestSettingsModalTabNavReachesSkills(t *testing.T) {
 func TestSettingsModalApplyFallsBackOnBadGlamour(t *testing.T) {
 	t.Setenv("XDG_CONFIG_HOME", t.TempDir())
 	root := newApplyRoot(t)
-	mm := newSettingsModal(root.settings, "anthropic", nil, nil)
+	mm := newSettingsModal(root.settings, "anthropic", nil, nil, nil)
 	// Unknown glamour style — NewTheme falls back to renderer-less glam if the
 	// SDK rejects the style. Apply's guard only kicks in when Glamour() is nil.
 	mm.pending.Theme.GlamourStyle = "nonexistent-style-xyz"

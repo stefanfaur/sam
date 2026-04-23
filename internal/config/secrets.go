@@ -8,9 +8,10 @@ import (
 	"github.com/BurntSushi/toml"
 )
 
+// Secrets holds per-provider API keys keyed by provider name (matching
+// cfg.Providers[name]).
 type Secrets struct {
-	MinimaxAPIKey   string `toml:"minimax_api_key,omitempty"`
-	AnthropicAPIKey string `toml:"anthropic_api_key,omitempty"`
+	APIKeys map[string]string `toml:"api_keys"`
 }
 
 func SecretsPath() string {
@@ -35,6 +36,9 @@ func LoadSecrets() Secrets {
 		return s
 	}
 	_ = toml.Unmarshal(b, &s)
+	if s.APIKeys == nil {
+		s.APIKeys = map[string]string{}
+	}
 	return s
 }
 
@@ -54,14 +58,21 @@ func SaveSecrets(s Secrets) error {
 	return toml.NewEncoder(f).Encode(s)
 }
 
-// ApplyEnv exports secrets to env vars when they are not already set.
-// Returns the Secrets struct for chained use.
-func (s Secrets) ApplyEnv() Secrets {
-	if s.MinimaxAPIKey != "" && os.Getenv("MINIMAX_API_KEY") == "" {
-		_ = os.Setenv("MINIMAX_API_KEY", s.MinimaxAPIKey)
+// ApplyEnv exports per-provider secrets into the env var declared by each
+// provider entry's APIKeyEnv, unless the env var is already set.
+func (s Secrets) ApplyEnv(cfg *Config) Secrets {
+	if cfg == nil {
+		return s
 	}
-	if s.AnthropicAPIKey != "" && os.Getenv("ANTHROPIC_API_KEY") == "" {
-		_ = os.Setenv("ANTHROPIC_API_KEY", s.AnthropicAPIKey)
+	for name, entry := range cfg.Providers {
+		key := s.APIKeys[name]
+		if key == "" || entry.APIKeyEnv == "" {
+			continue
+		}
+		if os.Getenv(entry.APIKeyEnv) != "" {
+			continue
+		}
+		_ = os.Setenv(entry.APIKeyEnv, key)
 	}
 	return s
 }

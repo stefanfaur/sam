@@ -15,6 +15,74 @@ import (
 
 var Debug = os.Getenv("SAM_DEBUG") == "1"
 
+// BuildMessages projects cross-provider history into Anthropic SDK param
+// messages. ContentThinking blocks drop silently pre-wire — Anthropic's
+// extended-thinking requires signed thinking blocks we do not carry today.
+func BuildMessages(in []llm.Message) []anthropic.MessageParam {
+	out := make([]anthropic.MessageParam, 0, len(in))
+	for _, msg := range in {
+		blocks := make([]anthropic.ContentBlockParamUnion, 0, len(msg.Content))
+		for _, block := range msg.Content {
+			switch block.Type {
+			case llm.ContentText:
+				blocks = append(blocks, anthropic.NewTextBlock(block.Text))
+			case llm.ContentThinking:
+				continue
+			case llm.ContentToolUse:
+				var input map[string]any
+				if len(block.Input) > 0 {
+					_ = json.Unmarshal(block.Input, &input)
+				}
+				blocks = append(blocks, anthropic.NewToolUseBlock(
+					block.ToolUseID,
+					input,
+					block.ToolName,
+				))
+			case llm.ContentToolResult:
+				blocks = append(blocks, anthropic.NewToolResultBlock(
+					block.ToolUseID,
+					block.Output,
+					block.IsError,
+				))
+			}
+		}
+		if msg.Role == llm.RoleAssistant {
+			out = append(out, anthropic.NewAssistantMessage(blocks...))
+		} else {
+			out = append(out, anthropic.NewUserMessage(blocks...))
+		}
+	}
+	return out
+}
+
+// BuildTools projects cross-provider tool defs into Anthropic SDK tool
+// params, reading `required` from the schema verbatim rather than
+// synthesizing it from property names.
+func BuildTools(in []llm.ToolDef) []anthropic.ToolUnionParam {
+	var out []anthropic.ToolUnionParam
+	for _, tool := range in {
+		schema := tool.Schema
+		var required []string
+		if raw, ok := schema["required"].([]any); ok {
+			for _, r := range raw {
+				if s, ok := r.(string); ok {
+					required = append(required, s)
+				}
+			}
+		} else if raw, ok := schema["required"].([]string); ok {
+			required = append(required, raw...)
+		}
+		out = append(out, anthropic.ToolUnionParamOfTool(
+			anthropic.ToolInputSchemaParam{
+				Properties: schema,
+				Required:   required,
+			},
+			tool.Name,
+		))
+	}
+	return out
+}
+
 type Options struct {
 	APIKey  string
 	BaseURL string
@@ -54,57 +122,8 @@ func (c *Client) Stream(ctx context.Context, req llm.Request) (<-chan llm.Stream
 		maxTokens = 4096
 	}
 
-	// Build messages using SDK types
-	msgs := make([]anthropic.MessageParam, 0, len(req.Messages))
-	for _, msg := range req.Messages {
-		blocks := make([]anthropic.ContentBlockParamUnion, 0, len(msg.Content))
-		for _, block := range msg.Content {
-			switch block.Type {
-			case llm.ContentText:
-				blocks = append(blocks, anthropic.NewTextBlock(block.Text))
-			case llm.ContentToolUse:
-				var input map[string]any
-				if len(block.Input) > 0 {
-					_ = json.Unmarshal(block.Input, &input)
-				}
-				blocks = append(blocks, anthropic.NewToolUseBlock(
-					block.ToolUseID,
-					input,
-					block.ToolName,
-				))
-			case llm.ContentToolResult:
-				blocks = append(blocks, anthropic.NewToolResultBlock(
-					block.ToolUseID,
-					block.Output,
-					block.IsError,
-				))
-			}
-		}
-		if msg.Role == llm.RoleAssistant {
-			msgs = append(msgs, anthropic.NewAssistantMessage(blocks...))
-		} else {
-			msgs = append(msgs, anthropic.NewUserMessage(blocks...))
-		}
-	}
-
-	// Build tools
-	var tools []anthropic.ToolUnionParam
-	for _, tool := range req.Tools {
-		schema := tool.Schema
-		var required []string
-		if props, ok := schema["properties"].(map[string]any); ok {
-			for k := range props {
-				required = append(required, k)
-			}
-		}
-		tools = append(tools, anthropic.ToolUnionParamOfTool(
-			anthropic.ToolInputSchemaParam{
-				Properties: schema,
-				Required:   required,
-			},
-			tool.Name,
-		))
-	}
+	msgs := BuildMessages(req.Messages)
+	tools := BuildTools(req.Tools)
 
 	// Create request params
 	params := anthropic.MessageNewParams{

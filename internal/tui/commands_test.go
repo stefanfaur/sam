@@ -34,9 +34,9 @@ func mkSkill(t *testing.T, root, name string) {
 
 func TestParseCommand_Builtins(t *testing.T) {
 	cases := []struct {
-		in       string
-		wantCmd  Command
-		wantArg  string
+		in      string
+		wantCmd Command
+		wantArg string
 	}{
 		{"/help", CmdHelp, ""},
 		{"/quit", CmdQuit, ""},

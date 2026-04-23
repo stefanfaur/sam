@@ -9,26 +9,45 @@ import (
 	"github.com/BurntSushi/toml"
 )
 
-type ProviderConfig struct {
-	BaseURL string `toml:"base_url"`
+type CapsOverride struct {
+	SystemRole                *string `toml:"system_role"`
+	SystemRoleFallback        *string `toml:"system_role_fallback"`
+	MaxTokensField            *string `toml:"max_tokens_field"`
+	SupportsSamplingParams    *bool   `toml:"supports_sampling_params"`
+	SupportsReasoningEffort   *bool   `toml:"supports_reasoning_effort"`
+	SupportsIncludeUsage      *bool   `toml:"supports_include_usage"`
+	SupportsParallelToolCalls *bool   `toml:"supports_parallel_tool_calls"`
+	EchoReasoning             *bool   `toml:"echo_reasoning"`
+	ReasoningSource           *string `toml:"reasoning_source"`
+	AuthHeader                *string `toml:"auth_header"`
+}
+
+type ProviderEntry struct {
+	Name           string       `toml:"-"`
+	Wire           string       `toml:"wire"`
+	BaseURL        string       `toml:"base_url"`
+	APIKeyEnv      string       `toml:"api_key_env"`
+	DefaultModel   string       `toml:"default_model"`
+	Models         []string     `toml:"models"`
+	ModelPrefixes  []string     `toml:"model_prefixes"`
+	ParseThinkTags bool         `toml:"parse_think_tags"`
+	Caps           CapsOverride `toml:"caps"`
 }
 
 type ModelConfig struct {
-	ContextWindow int `toml:"context_window"`
+	ContextWindow   int    `toml:"context_window"`
+	ReasoningEffort string `toml:"reasoning_effort"`
 }
 
 type Config struct {
-	Provider         string `toml:"provider"`
-	Model            string `toml:"model"`
-	SystemPromptFile string `toml:"system_prompt_file"`
-	MaxTokens        int    `toml:"max_tokens"`
-	MaxIterations    int    `toml:"max_iterations"`
-	Providers        struct {
-		Minimax   ProviderConfig `toml:"minimax"`
-		Anthropic ProviderConfig `toml:"anthropic"`
-	} `toml:"providers"`
-	Models map[string]ModelConfig `toml:"models"`
-	TUI    struct {
+	Provider         string                   `toml:"provider"`
+	Model            string                   `toml:"model"`
+	SystemPromptFile string                   `toml:"system_prompt_file"`
+	MaxTokens        int                      `toml:"max_tokens"`
+	MaxIterations    int                      `toml:"max_iterations"`
+	Providers        map[string]ProviderEntry `toml:"providers"`
+	Models           map[string]ModelConfig   `toml:"models"`
+	TUI              struct {
 		Theme string `toml:"theme"`
 	} `toml:"tui"`
 }
@@ -47,6 +66,19 @@ func (c *Config) ModelContextWindow(name string) int {
 	case strings.HasPrefix(name, "MiniMax-M2"),
 		strings.HasPrefix(name, "MiniMax-M1"):
 		return 1_000_000
+	case strings.HasPrefix(name, "gpt-5"),
+		strings.HasPrefix(name, "o1"),
+		strings.HasPrefix(name, "o3"),
+		strings.HasPrefix(name, "o4"):
+		return 400_000
+	case strings.HasPrefix(name, "gpt-4o"),
+		strings.HasPrefix(name, "gpt-4.1"):
+		return 128_000
+	case strings.HasPrefix(name, "deepseek-r"),
+		strings.HasPrefix(name, "deepseek-v3"):
+		return 131_072
+	case strings.HasPrefix(name, "trinity-"):
+		return 512_000
 	}
 	return 128_000
 }
@@ -58,18 +90,62 @@ type Overrides struct {
 	SystemPromptFile string
 }
 
+// rawConfig mirrors Config but captures the raw presence of the providers
+// map so we can full-replace preset entries that the user redeclares.
+type rawConfig struct {
+	Provider         string                   `toml:"provider"`
+	Model            string                   `toml:"model"`
+	SystemPromptFile string                   `toml:"system_prompt_file"`
+	MaxTokens        int                      `toml:"max_tokens"`
+	MaxIterations    int                      `toml:"max_iterations"`
+	Providers        map[string]ProviderEntry `toml:"providers"`
+	Models           map[string]ModelConfig   `toml:"models"`
+	TUI              struct {
+		Theme string `toml:"theme"`
+	} `toml:"tui"`
+}
+
 func Load(over Overrides) (*Config, error) {
 	cfg := &Config{
 		Provider:      "minimax",
 		MaxTokens:     4096,
 		MaxIterations: 25,
+		Providers:     Presets(),
 	}
 	cfg.TUI.Theme = "dark"
 
 	path := getConfigPath()
 	if data, err := os.ReadFile(path); err == nil {
-		if err := toml.Unmarshal(data, cfg); err != nil {
+		var raw rawConfig
+		if err := toml.Unmarshal(data, &raw); err != nil {
 			return nil, fmt.Errorf("parse %s: %w", path, err)
+		}
+		if raw.Provider != "" {
+			cfg.Provider = raw.Provider
+		}
+		if raw.Model != "" {
+			cfg.Model = raw.Model
+		}
+		if raw.SystemPromptFile != "" {
+			cfg.SystemPromptFile = raw.SystemPromptFile
+		}
+		if raw.MaxTokens != 0 {
+			cfg.MaxTokens = raw.MaxTokens
+		}
+		if raw.MaxIterations != 0 {
+			cfg.MaxIterations = raw.MaxIterations
+		}
+		if raw.Models != nil {
+			cfg.Models = raw.Models
+		}
+		if raw.TUI.Theme != "" {
+			cfg.TUI.Theme = raw.TUI.Theme
+		}
+		// Full-replace merge: any provider key declared in TOML replaces
+		// the preset entry entirely.
+		for name, entry := range raw.Providers {
+			entry.Name = name
+			cfg.Providers[name] = entry
 		}
 	}
 
@@ -92,10 +168,26 @@ func Load(over Overrides) (*Config, error) {
 		cfg.SystemPromptFile = over.SystemPromptFile
 	}
 
-	if cfg.Provider != "minimax" && cfg.Provider != "anthropic" {
-		return nil, fmt.Errorf("invalid provider: %s (must be 'minimax' or 'anthropic')", cfg.Provider)
+	// Validate every entry's wire.
+	for name, entry := range cfg.Providers {
+		switch entry.Wire {
+		case "anthropic", "openai":
+		default:
+			return nil, fmt.Errorf("provider %q: invalid wire %q (must be 'anthropic' or 'openai')", name, entry.Wire)
+		}
+	}
+	if _, ok := cfg.Providers[cfg.Provider]; !ok {
+		return nil, fmt.Errorf("unknown provider %q (known: %s)", cfg.Provider, joinProviderNames(cfg.Providers))
 	}
 	return cfg, nil
+}
+
+func joinProviderNames(m map[string]ProviderEntry) string {
+	names := make([]string, 0, len(m))
+	for k := range m {
+		names = append(names, k)
+	}
+	return strings.Join(names, ", ")
 }
 
 func MustLoad(over Overrides) *Config {

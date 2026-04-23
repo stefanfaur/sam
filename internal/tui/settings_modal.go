@@ -50,9 +50,8 @@ type settingsModal struct {
 	pending      Settings
 	pendingTheme *Theme
 
-	provider     string
-	minimaxKey   string
-	anthropicKey string
+	provider  string
+	providers map[string]config.ProviderEntry
 
 	selectedSegments []string
 
@@ -60,11 +59,12 @@ type settingsModal struct {
 	skills  *skillsWidget
 }
 
-func newSettingsModal(current Settings, curProvider string, factory ProviderFactory, skillReg *skills.Registry) *settingsModal {
+func newSettingsModal(current Settings, curProvider string, factory ProviderFactory, skillReg *skills.Registry, providers map[string]config.ProviderEntry) *settingsModal {
 	m := &settingsModal{
 		pending:      current,
 		pendingTheme: NewTheme(current.Theme),
 		provider:     curProvider,
+		providers:    providers,
 		factory:      factory,
 		skills:       newSkillsWidget(skillReg),
 	}
@@ -230,18 +230,21 @@ func (m *settingsModal) buildStatuslineForm() *huh.Form {
 }
 
 func (m *settingsModal) buildProvidersForm() *huh.Form {
+	opts := make([]huh.Option[string], 0, len(m.providers))
+	for _, name := range sortedProviderNames(m.providers) {
+		opts = append(opts, huh.NewOption(name, name))
+	}
+	if len(opts) == 0 {
+		opts = append(opts, huh.NewOption("(none)", ""))
+	}
+	table := renderProviderStatus(m.providers, m.provider)
+	desc := table + "\n\nEdit keys with /auth <name>."
 	return huh.NewForm(
 		huh.NewGroup(
 			huh.NewSelect[string]().
-				Title("Provider").
-				Options(
-					huh.NewOption("Minimax", "minimax"),
-					huh.NewOption("Anthropic", "anthropic"),
-				).Value(&m.provider),
-			huh.NewInput().Title("Minimax API key (blank = keep existing)").
-				EchoMode(huh.EchoModePassword).Value(&m.minimaxKey),
-			huh.NewInput().Title("Anthropic API key (blank = keep existing)").
-				EchoMode(huh.EchoModePassword).Value(&m.anthropicKey),
+				Title("Active provider").
+				Options(opts...).Value(&m.provider),
+			huh.NewNote().Title("Providers (read-only)").Description(desc),
 		),
 	).WithShowHelp(true)
 }
@@ -330,29 +333,20 @@ type errHex string
 
 func (e errHex) Error() string { return string(e) }
 func (m *settingsModal) applyProviders(root *Model) tea.Cmd {
-	s := config.LoadSecrets()
-	changed := false
-	if m.minimaxKey != "" {
-		s.MinimaxAPIKey = m.minimaxKey
-		changed = true
-	}
-	if m.anthropicKey != "" {
-		s.AnthropicAPIKey = m.anthropicKey
-		changed = true
-	}
-	if changed {
-		if err := config.SaveSecrets(s); err != nil {
-			return root.addInfo("save secrets failed: " + err.Error())
-		}
-		s.ApplyEnv()
-	}
 	if m.factory != nil && m.provider != "" && m.provider != root.status.provider {
-		p, err := m.factory(m.provider, root.status.model)
+		entry := m.providers[m.provider]
+		model := root.status.model
+		if model == "" {
+			model = entry.DefaultModel
+		}
+		p, err := m.factory(m.provider, model)
 		if err != nil {
 			return root.addInfo("provider build failed: " + err.Error())
 		}
 		root.agent.SetProvider(p)
+		root.agent.SetModel(model)
 		root.status.provider = m.provider
+		root.status.model = model
 	}
 	return nil
 }

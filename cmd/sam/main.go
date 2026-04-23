@@ -14,8 +14,7 @@ import (
 	"github.com/stefanfaur/sam/internal/agent"
 	"github.com/stefanfaur/sam/internal/config"
 	"github.com/stefanfaur/sam/internal/llm"
-	"github.com/stefanfaur/sam/internal/llm/anthropic"
-	"github.com/stefanfaur/sam/internal/llm/minimax"
+	"github.com/stefanfaur/sam/internal/llm/registry"
 	"github.com/stefanfaur/sam/internal/logging"
 	"github.com/stefanfaur/sam/internal/policy"
 	"github.com/stefanfaur/sam/internal/skills"
@@ -38,8 +37,6 @@ func main() {
 	systemPromptFile := flag.String("system-prompt", "", "path to a file containing the system prompt")
 	flag.Parse()
 
-	config.LoadSecrets().ApplyEnv()
-
 	cfg, err := config.Load(config.Overrides{
 		Provider:         *providerFlag,
 		Model:            *modelFlag,
@@ -49,6 +46,8 @@ func main() {
 		fmt.Fprintln(os.Stderr, "config error:", err)
 		os.Exit(2)
 	}
+
+	config.LoadSecrets().ApplyEnv(cfg)
 
 	logger, ring, _ := logging.Setup(logging.DefaultStateDir())
 
@@ -76,21 +75,16 @@ func mustProvider(cfg *config.Config) llm.Provider {
 
 func buildProvider(cfg *config.Config, name, model string) (llm.Provider, error) {
 	// Reload secrets so /auth saves take effect on rebuild.
-	config.LoadSecrets().ApplyEnv()
-	switch name {
-	case "minimax":
-		return minimax.New(minimax.Options{
-			BaseURL: cfg.Providers.Minimax.BaseURL,
-			Model:   model,
-		})
-	case "anthropic":
-		return anthropic.New(anthropic.Options{
-			BaseURL: cfg.Providers.Anthropic.BaseURL,
-			Model:   model,
-		})
-	default:
+	config.LoadSecrets().ApplyEnv(cfg)
+	entry, ok := cfg.Providers[name]
+	if !ok {
 		return nil, fmt.Errorf("unknown provider: %s", name)
 	}
+	if model == "" {
+		model = entry.DefaultModel
+	}
+	resolver := func(m string) string { return cfg.Models[m].ReasoningEffort }
+	return registry.Build(entry, model, resolver)
 }
 
 func buildRegistry(cwd string) (*tools.Registry, *tools.ReadTracker) {
@@ -137,6 +131,7 @@ func runTUI(ctx context.Context, cfg *config.Config, logger *slog.Logger, ring *
 			return buildProvider(cfg, name, modelName)
 		},
 		ContextWindowFn: cfg.ModelContextWindow,
+		Providers:       cfg.Providers,
 	})
 	model.SetSkills(skillReg)
 	prog := tea.NewProgram(model, tea.WithContext(ctx))

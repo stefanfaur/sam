@@ -7,6 +7,7 @@ import (
 	"github.com/charmbracelet/bubbles/viewport"
 	"github.com/charmbracelet/lipgloss"
 	"github.com/stefanfaur/sam/internal/agent"
+	"github.com/stefanfaur/sam/internal/config"
 	"github.com/stefanfaur/sam/internal/logging"
 	"github.com/stefanfaur/sam/internal/skills"
 )
@@ -34,23 +35,24 @@ type skillCardState struct {
 }
 
 type Model struct {
-	agent     *agent.Agent
-	input     textarea.Model
-	status    statusbarModel
-	approval  *Approval
-	modal     modal
-	debug     debugModel
-	pending   *pendingTurn
-	width     int
-	height    int
-	settings  Settings
-	theme     *Theme
-	git       gitInfo
-	spinner   spinnerState
-	turnStart time.Time
-	ring      *logging.Ring
-	factory   ProviderFactory
-	ctxWinFn  func(model string) int
+	agent         *agent.Agent
+	input         textarea.Model
+	status        statusbarModel
+	approval      *Approval
+	modal         modal
+	debug         debugModel
+	pending       *pendingTurn
+	width         int
+	height        int
+	settings      Settings
+	theme         *Theme
+	git           gitInfo
+	spinner       spinnerState
+	turnStart     time.Time
+	ring          *logging.Ring
+	factory       ProviderFactory
+	ctxWinFn      func(model string) int
+	providers     map[string]config.ProviderEntry
 	suggest       suggestState
 	lastCtrlC     time.Time
 	scanner       *blockScanner
@@ -122,6 +124,7 @@ type Options struct {
 	MaxIter         int
 	ProviderFactory ProviderFactory
 	ContextWindowFn func(model string) int
+	Providers       map[string]config.ProviderEntry
 }
 
 func New(a *agent.Agent, ring *logging.Ring, opts Options) *Model {
@@ -160,8 +163,9 @@ func New(a *agent.Agent, ring *logging.Ring, opts Options) *Model {
 			state:    "idle",
 			maxIter:  opts.MaxIter,
 		},
-		debug:    debugModel{viewport: viewport.New(80, 20), ring: ring, theme: theme},
-		factory:  opts.ProviderFactory,
-		ctxWinFn: opts.ContextWindowFn,
+		debug:     debugModel{viewport: viewport.New(80, 20), ring: ring, theme: theme},
+		factory:   opts.ProviderFactory,
+		ctxWinFn:  opts.ContextWindowFn,
+		providers: opts.Providers,
 	}
 }

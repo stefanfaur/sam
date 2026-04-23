@@ -10,18 +10,20 @@ import (
 type Command string
 
 const (
-	CmdUnknown       Command = ""
-	CmdNone          Command = "none"
-	CmdQuit          Command = "quit"
-	CmdClear         Command = "clear"
-	CmdReset         Command = "reset"
-	CmdModel         Command = "model"
-	CmdCwd           Command = "cwd"
-	CmdHelp          Command = "help"
-	CmdSettings      Command = "settings"
-	CmdSkill         Command = "skill"
-	CmdReloadSkills  Command = "reload-skills"
-	CmdShowSkill     Command = "show-skill"
+	CmdUnknown      Command = ""
+	CmdNone         Command = "none"
+	CmdQuit         Command = "quit"
+	CmdClear        Command = "clear"
+	CmdReset        Command = "reset"
+	CmdModel        Command = "model"
+	CmdProvider     Command = "provider"
+	CmdAuth         Command = "auth"
+	CmdCwd          Command = "cwd"
+	CmdHelp         Command = "help"
+	CmdSettings     Command = "settings"
+	CmdSkill        Command = "skill"
+	CmdReloadSkills Command = "reload-skills"
+	CmdShowSkill    Command = "show-skill"
 )
 
 // commandSuggestions lists built-in slash commands.
@@ -33,7 +35,9 @@ var commandSuggestions = []struct {
 	{"/cwd", "print launch directory"},
 	{"/exit", "quit"},
 	{"/help", "show keybindings and commands"},
-	{"/model", "pick model (no arg = interactive)"},
+	{"/model", "switch model; accepts provider/model or bare name"},
+	{"/provider", "switch provider; defaults model to preset"},
+	{"/auth", "view/set provider API keys"},
 	{"/quit", "quit"},
 	{"/reload-skills", "re-scan skill roots"},
 	{"/reset", "reset history and session allowlist"},
@@ -44,7 +48,7 @@ var commandSuggestions = []struct {
 // BuiltinNames lists slash names reserved by the TUI itself.
 // Skills with a colliding name are demoted to namespaced-only.
 var BuiltinNames = []string{
-	"exit", "quit", "clear", "reset", "model", "provider", "cwd", "help",
+	"exit", "quit", "clear", "reset", "model", "provider", "auth", "cwd", "help",
 	"settings", "reload-skills", "show-skill",
 }
 
@@ -71,6 +75,10 @@ func parseCommand(text string, reg *skills.Registry) (Command, string, *skills.S
 		return CmdReset, "", nil
 	case "model":
 		return CmdModel, arg, nil
+	case "provider":
+		return CmdProvider, arg, nil
+	case "auth":
+		return CmdAuth, arg, nil
 	case "cwd":
 		return CmdCwd, "", nil
 	case "help":

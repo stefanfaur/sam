@@ -390,21 +390,32 @@ func (m *Model) dispatchCommand(cmd Command, arg string, sk *skills.Skill) (tea.
 		return m, m.clearAndAnchorBottom()
 
 	case CmdModel:
+		m.input.Reset()
+		m.suggest.active = false
 		if arg != "" {
-			m.agent.SetModel(arg)
-			m.status.model = arg
-			m.input.Reset()
-			m.suggest.active = false
-			return m, m.addInfo("model set to " + arg)
+			return m, m.applyModelSpec(arg)
 		}
 		m.modal = newModelForm(m.status.provider, m.status.model)
 		m.input.Blur()
 		return m, m.modal.Init()
 
+	case CmdProvider:
+		m.input.Reset()
+		m.suggest.active = false
+		if arg == "" {
+			return m, m.addInfo(m.providerListSummary())
+		}
+		return m, m.switchProvider(arg, "")
+
+	case CmdAuth:
+		m.input.Reset()
+		m.suggest.active = false
+		return m, m.handleAuth(arg)
+
 	case CmdSettings:
 		m.input.Reset()
 		m.suggest.active = false
-		m.modal = newSettingsModal(m.settings, m.status.provider, m.factory, m.skills)
+		m.modal = newSettingsModal(m.settings, m.status.provider, m.factory, m.skills, m.providers)
 		m.input.Blur()
 		return m, m.modal.Init()
 

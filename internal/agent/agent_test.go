@@ -238,6 +238,112 @@ func TestMaxIterationsCap(t *testing.T) {
 	}
 }
 
+func TestThinkingDeltaAccumulatesIntoContentBlock(t *testing.T) {
+	prov := fake.New([]llm.StreamEvent{
+		{Type: llm.EventMessageStart},
+		{Type: llm.EventThinkingDelta, Text: "step one, "},
+		{Type: llm.EventThinkingDelta, Text: "step two."},
+		{Type: llm.EventTextDelta, Text: "answer"},
+		{Type: llm.EventMessageStop, StopReason: "end_turn"},
+	})
+	reg := tools.NewRegistry()
+	agent := New(Options{Provider: prov, Tools: reg, Policy: policy.AllowAll()})
+	agent.Start()
+	defer agent.Close()
+
+	if _, err := collectEvents(agent.Submit(context.Background(), "hi")); err != nil {
+		t.Fatalf("submit: %v", err)
+	}
+	if len(agent.history) != 2 {
+		t.Fatalf("history len: %d", len(agent.history))
+	}
+	asst := agent.history[1]
+	var thinking []llm.ContentBlock
+	var text []llm.ContentBlock
+	for _, b := range asst.Content {
+		switch b.Type {
+		case llm.ContentThinking:
+			thinking = append(thinking, b)
+		case llm.ContentText:
+			text = append(text, b)
+		}
+	}
+	if len(thinking) != 1 {
+		t.Fatalf("expected 1 collapsed thinking block, got %d", len(thinking))
+	}
+	if thinking[0].Text != "step one, step two." {
+		t.Errorf("thinking text: %q", thinking[0].Text)
+	}
+	if len(text) != 1 || text[0].Text != "answer" {
+		t.Errorf("text blocks: %+v", text)
+	}
+	// Ordering: thinking must appear before text.
+	if asst.Content[0].Type != llm.ContentThinking || asst.Content[1].Type != llm.ContentText {
+		t.Errorf("bad ordering: %+v", asst.Content)
+	}
+}
+
+func TestMultiTurnReasoningPreservation(t *testing.T) {
+	// Turn 1: emit thinking + tool_use + stop tool_use (forces a second turn).
+	// Turn 2: emit a simple end-of-turn.
+	prov := fake.New(
+		[]llm.StreamEvent{
+			{Type: llm.EventMessageStart},
+			{Type: llm.EventThinkingDelta, Text: "reasoning body"},
+			{Type: llm.EventTextDelta, Text: "text body"},
+			{Type: llm.EventToolUseStart, ToolUseID: "t1", ToolName: "Read"},
+			{Type: llm.EventToolUseDelta, ToolUseID: "t1", PartialJSON: `{"file_path":"/x"}`},
+			{Type: llm.EventToolUseStop, ToolUseID: "t1"},
+			{Type: llm.EventMessageStop, StopReason: "tool_use"},
+		},
+		[]llm.StreamEvent{
+			{Type: llm.EventMessageStart},
+			{Type: llm.EventTextDelta, Text: "done"},
+			{Type: llm.EventMessageStop, StopReason: "end_turn"},
+		},
+	)
+	tracker := tools.NewReadTracker()
+	reg := tools.NewRegistry()
+	reg.Register(tools.NewRead(tracker))
+
+	agent := New(Options{Provider: prov, Tools: reg, Policy: policy.AllowAll()})
+	agent.Start()
+	defer agent.Close()
+	if _, err := collectEvents(agent.Submit(context.Background(), "hi")); err != nil {
+		t.Fatalf("submit: %v", err)
+	}
+
+	if len(prov.Calls) < 2 {
+		t.Fatalf("expected ≥2 provider calls, got %d", len(prov.Calls))
+	}
+	// On turn 2 the agent must send the prior assistant message with a
+	// ContentThinking block preserved.
+	secondReq := prov.Calls[1]
+	var found *llm.ContentBlock
+	var sawOrderThinkingFirst bool
+	for _, msg := range secondReq.Messages {
+		if msg.Role != llm.RoleAssistant {
+			continue
+		}
+		for i, b := range msg.Content {
+			if b.Type == llm.ContentThinking && b.Text == "reasoning body" {
+				found = &msg.Content[i]
+				// Thinking should precede the text/tool_use blocks
+				// (mirroring stream-event arrival order).
+				if i == 0 {
+					sawOrderThinkingFirst = true
+				}
+			}
+		}
+	}
+	if found == nil {
+		t.Fatalf("ContentThinking with prior reasoning not found in turn-2 request: %+v", secondReq.Messages)
+	}
+	if !sawOrderThinkingFirst {
+		t.Error("thinking block not in leading position on assistant history")
+	}
+}
+
 // Helper functions
 
 func collectEvents(ch <-chan Event) ([]Event, error) {

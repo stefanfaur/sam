@@ -13,6 +13,7 @@ type ContentType string
 
 const (
 	ContentText       ContentType = "text"
+	ContentThinking   ContentType = "thinking"
 	ContentToolUse    ContentType = "tool_use"
 	ContentToolResult ContentType = "tool_result"
 )
