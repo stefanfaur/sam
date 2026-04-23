@@ -126,6 +126,40 @@ func TestSegTokensVisibleWithUsage(t *testing.T) {
 	}
 }
 
+func TestSegTokensShowsEffectiveAndCached(t *testing.T) {
+	m := newTestModel()
+	m.status.turnIn = 1_400_000
+	m.status.turnCacheRead = 1_380_000
+	m.status.turnOut = 1_100
+	s := segTokens(m)
+	if !s.visible {
+		t.Fatal("tokens should show")
+	}
+	// effective = 20k; cached = 1.4M
+	if !contains(s.text, "20.0k") {
+		t.Errorf("expected effective 20.0k in text: %q", s.text)
+	}
+	if !contains(s.text, "1.4M") || !contains(s.text, "⚡") {
+		t.Errorf("expected cached 1.4M⚡ in text: %q", s.text)
+	}
+	if !contains(s.text, "1.1k") {
+		t.Errorf("expected output 1.1k in text: %q", s.text)
+	}
+}
+
+func TestSegTokensNoCacheOmitsBadge(t *testing.T) {
+	m := newTestModel()
+	m.status.turnIn = 5_000
+	m.status.turnOut = 200
+	s := segTokens(m)
+	if contains(s.text, "⚡") {
+		t.Errorf("cache badge should hide without cache: %q", s.text)
+	}
+	if !contains(s.text, "5.0k") {
+		t.Errorf("expected full in: %q", s.text)
+	}
+}
+
 func TestSegIterDisabled(t *testing.T) {
 	m := newTestModel()
 	m.settings.Statusbar.Segments.Iterations = false

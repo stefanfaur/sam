@@ -53,6 +53,27 @@ func TestStreamPlainText(t *testing.T) {
 	}
 }
 
+func TestStreamUsageCachedTokens(t *testing.T) {
+	stop := "stop"
+	chunks := []streamChunk{
+		{Choices: []streamChoice{{Delta: streamDelta{Content: ptr("hi")}}}},
+		{Choices: []streamChoice{{FinishReason: &stop}}},
+		{Usage: &streamUsage{
+			PromptTokens:        5019,
+			CompletionTokens:    20,
+			PromptTokensDetails: streamUsagePromptDet{CachedTokens: 5008},
+		}},
+	}
+	evs := collect(translate(sendAll(chunks), DefaultCaps("trinity-large-thinking"), nil))
+	last := evs[len(evs)-1]
+	if last.Type != llm.EventMessageStop {
+		t.Fatalf("last type %s", last.Type)
+	}
+	if last.InputTokens != 5019 || last.OutputTokens != 20 || last.CacheReadInput != 5008 {
+		t.Errorf("usage: in=%d out=%d cache=%d", last.InputTokens, last.OutputTokens, last.CacheReadInput)
+	}
+}
+
 func TestStreamReasoningContent(t *testing.T) {
 	stop := "stop"
 	chunks := []streamChunk{

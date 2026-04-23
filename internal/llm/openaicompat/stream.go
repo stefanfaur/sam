@@ -188,6 +188,7 @@ func translate(chunks <-chan streamChunk, caps Capabilities, tagParser *Parser) 
 		if lastUsage != nil {
 			stop.InputTokens = lastUsage.PromptTokens
 			stop.OutputTokens = lastUsage.CompletionTokens
+			stop.CacheReadInput = lastUsage.PromptTokensDetails.CachedTokens
 		}
 		out <- stop
 	}()

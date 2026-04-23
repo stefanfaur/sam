@@ -214,9 +214,20 @@ func segTokens(m *Model) segment {
 	}
 	inStyle := segStyle(lipgloss.Color("110"))
 	outStyle := segStyle(lipgloss.Color("117"))
-	text := inStyle.Render(humanK(m.status.turnIn)+"↓") +
-		segStyle(lipgloss.Color("244")).Render(" ") +
+	dimStyle := segStyle(lipgloss.Color("244"))
+	cacheStyle := segStyle(lipgloss.Color("108"))
+
+	effectiveIn := m.status.turnIn - m.status.turnCacheRead
+	if effectiveIn < 0 {
+		effectiveIn = 0
+	}
+	text := inStyle.Render(humanK(effectiveIn)+"↓") +
+		dimStyle.Render(" ") +
 		outStyle.Render(humanK(m.status.turnOut)+"↑")
+	if m.status.turnCacheRead > 0 {
+		text += dimStyle.Render(" ") +
+			cacheStyle.Render(humanK(m.status.turnCacheRead)+"⚡")
+	}
 	return segment{text: text, priority: 9, visible: true}
 }
 

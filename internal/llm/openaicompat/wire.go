@@ -94,8 +94,13 @@ type streamUsage struct {
 	PromptTokens            int                      `json:"prompt_tokens"`
 	CompletionTokens        int                      `json:"completion_tokens"`
 	CompletionTokensDetails streamUsageCompletionDet `json:"completion_tokens_details"`
+	PromptTokensDetails     streamUsagePromptDet     `json:"prompt_tokens_details"`
 }
 
 type streamUsageCompletionDet struct {
 	ReasoningTokens int `json:"reasoning_tokens"`
+}
+
+type streamUsagePromptDet struct {
+	CachedTokens int `json:"cached_tokens"`
 }
