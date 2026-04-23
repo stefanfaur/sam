@@ -18,6 +18,7 @@ import (
 	"github.com/stefanfaur/sam/internal/llm/minimax"
 	"github.com/stefanfaur/sam/internal/logging"
 	"github.com/stefanfaur/sam/internal/policy"
+	"github.com/stefanfaur/sam/internal/skills"
 	"github.com/stefanfaur/sam/internal/tools"
 	"github.com/stefanfaur/sam/internal/tui"
 )
@@ -111,6 +112,8 @@ func runTUI(ctx context.Context, cfg *config.Config, logger *slog.Logger, ring *
 
 	sys := cfg.LoadSystemPrompt(defaultSystemPrompt)
 
+	skillReg := buildSkillsRegistry(cwd, logger)
+
 	a := agent.New(agent.Options{
 		Provider:  prov,
 		Tools:     registry,
@@ -121,6 +124,7 @@ func runTUI(ctx context.Context, cfg *config.Config, logger *slog.Logger, ring *
 		MaxTokens: cfg.MaxTokens,
 		LaunchDir: cwd,
 		Logger:    logger,
+		Skills:    skillReg,
 	})
 	a.Start()
 	defer a.Close()
@@ -134,11 +138,35 @@ func runTUI(ctx context.Context, cfg *config.Config, logger *slog.Logger, ring *
 		},
 		ContextWindowFn: cfg.ModelContextWindow,
 	})
+	model.SetSkills(skillReg)
 	prog := tea.NewProgram(model, tea.WithContext(ctx))
 	if _, err := prog.Run(); err != nil {
 		fmt.Fprintln(os.Stderr, "error:", err)
 		os.Exit(1)
 	}
+}
+
+func buildSkillsRegistry(cwd string, logger *slog.Logger) *skills.Registry {
+	overrides, err := skills.LoadOverrides()
+	if err != nil {
+		logger.Warn("skills: load overrides failed", "err", err)
+	}
+	trust := skills.NewTrustList(overrides.Trust, overrides.Deny)
+
+	home, _ := os.UserHomeDir()
+	var rawRoots []string
+	if len(overrides.SkillRoots) > 0 {
+		rawRoots = overrides.SkillRoots
+	} else {
+		rawRoots = []string{".sam/skills", "~/.sam/skills", "~/.agents/skills"}
+	}
+	roots := skills.ExpandRoots(rawRoots, cwd, home)
+
+	reg := skills.NewRegistry(roots, overrides, trust, tui.BuiltinNames, logger)
+	if err := reg.Load(); err != nil {
+		logger.Warn("skills: load failed", "err", err)
+	}
+	return reg
 }
 
 func runAgentOneShot(ctx context.Context, cfg *config.Config, prompt string, logger *slog.Logger) error {
