@@ -13,6 +13,7 @@ type Script []llm.StreamEvent
 type Provider struct {
 	scripts []Script
 	callIdx int
+	Calls   []llm.Request
 }
 
 func New(scripts ...Script) *Provider {
@@ -24,7 +25,16 @@ func New(scripts ...Script) *Provider {
 
 func (p *Provider) Name() string { return "fake" }
 
+// LastSystem returns the system prompt of the most recent call, or "" if none.
+func (p *Provider) LastSystem() string {
+	if len(p.Calls) == 0 {
+		return ""
+	}
+	return p.Calls[len(p.Calls)-1].System
+}
+
 func (p *Provider) Stream(ctx context.Context, req llm.Request) (<-chan llm.StreamEvent, error) {
+	p.Calls = append(p.Calls, req)
 	if p.callIdx >= len(p.scripts) {
 		// No more scripts - return empty or error stream
 		ch := make(chan llm.StreamEvent)

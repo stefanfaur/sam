@@ -95,3 +95,16 @@ type UsageEvent struct {
 }
 
 func (UsageEvent) isEvent() {}
+
+// SkillInvoked is emitted at the start of SubmitSkill so the TUI can attach
+// its collapsed-render annotation before the normal turn events arrive. Body
+// is the rendered skill body (post-$ARGUMENTS substitution) that the provider
+// will see as the user turn — the TUI keeps it so it can be expanded on demand.
+type SkillInvoked struct {
+	Fingerprint string
+	Header      string
+	Source      string
+	Body        string
+}
+
+func (SkillInvoked) isEvent() {}

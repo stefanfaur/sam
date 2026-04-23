@@ -2,12 +2,14 @@ package agent
 
 import (
 	"context"
+	"fmt"
 	"log/slog"
 	"os"
 	"sync"
 
 	"github.com/stefanfaur/sam/internal/llm"
 	"github.com/stefanfaur/sam/internal/policy"
+	"github.com/stefanfaur/sam/internal/skills"
 	"github.com/stefanfaur/sam/internal/tools"
 )
 
@@ -19,20 +21,24 @@ type submit struct {
 
 // Agent orchestrates LLM calls with tool execution
 type Agent struct {
-	provider  llm.Provider
-	tools     *tools.Registry
-	policy    *policy.Policy
-	system    string
-	model     string
-	maxTokens int
-	maxIters  int
-	launchDir string
+	provider   llm.Provider
+	tools      *tools.Registry
+	policy     *policy.Policy
+	baseSystem string
+	system     string
+	catalog    string
+	model      string
+	maxTokens  int
+	maxIters   int
+	launchDir  string
 
 	history   []llm.Message
 	readFiles map[string]struct{}
 
+	skills *skills.Registry
+
 	in         chan submit
-	mu         sync.Mutex // protects cancelTurn
+	mu         sync.Mutex // protects cancelTurn + system/catalog + skills pointer
 	cancelTurn context.CancelFunc
 	log        *slog.Logger
 }
@@ -47,6 +53,7 @@ type Options struct {
 	MaxIters  int
 	LaunchDir string
 	Logger    *slog.Logger
+	Skills    *skills.Registry
 }
 
 func New(opts Options) *Agent {
@@ -64,20 +71,124 @@ func New(opts Options) *Agent {
 		opts.Logger = slog.Default()
 	}
 
-	return &Agent{
-		provider:  opts.Provider,
-		tools:     opts.Tools,
-		policy:    opts.Policy,
-		system:    opts.System,
-		model:     opts.Model,
-		maxTokens: opts.MaxTokens,
-		maxIters:  opts.MaxIters,
-		launchDir: opts.LaunchDir,
-		readFiles: make(map[string]struct{}),
-		in:        make(chan submit, 1),
-		history:   []llm.Message{},
-		log:       opts.Logger,
+	a := &Agent{
+		provider:   opts.Provider,
+		tools:      opts.Tools,
+		policy:     opts.Policy,
+		baseSystem: opts.System,
+		system:     opts.System,
+		model:      opts.Model,
+		maxTokens:  opts.MaxTokens,
+		maxIters:   opts.MaxIters,
+		launchDir:  opts.LaunchDir,
+		readFiles:  make(map[string]struct{}),
+		skills:     opts.Skills,
+		in:         make(chan submit, 1),
+		history:    []llm.Message{},
+		log:        opts.Logger,
 	}
+	a.RebuildSkillCatalog()
+	return a
+}
+
+// SetSkills swaps the skills registry and rebuilds the catalog.
+func (a *Agent) SetSkills(r *skills.Registry) {
+	a.mu.Lock()
+	a.skills = r
+	a.mu.Unlock()
+	a.RebuildSkillCatalog()
+}
+
+// Skills returns the current registry (may be nil).
+func (a *Agent) Skills() *skills.Registry {
+	a.mu.Lock()
+	defer a.mu.Unlock()
+	return a.skills
+}
+
+// RebuildSkillCatalog rebuilds the system prompt with (or without) the
+// model-invocable catalog depending on the registry + auto-invoke gate.
+func (a *Agent) RebuildSkillCatalog() {
+	a.mu.Lock()
+	defer a.mu.Unlock()
+	if a.skills == nil {
+		a.catalog = ""
+		a.system = a.baseSystem
+		return
+	}
+	ov := a.skills.Overrides()
+	gateOn := ov.AutoInvokeEnable != nil && *ov.AutoInvokeEnable
+	if !gateOn {
+		a.catalog = ""
+		a.system = a.baseSystem
+		return
+	}
+	cr := a.skills.Catalog()
+	a.catalog = cr.Block
+	if a.catalog == "" {
+		a.system = a.baseSystem
+	} else if a.baseSystem == "" {
+		a.system = a.catalog
+	} else {
+		a.system = a.baseSystem + "\n\n" + a.catalog
+	}
+	if cr.TokensEstimate > skills.CatalogSoftCapTokens {
+		a.log.Warn("skills: catalog exceeds soft cap", "tokens", cr.TokensEstimate)
+	}
+}
+
+// SubmitSkill resolves a skill by its slash name (or namespaced form),
+// renders its body with $ARGUMENTS substitution, and submits it as a normal
+// user turn. The first event on the returned channel is SkillInvoked so the
+// TUI can decorate the history row.
+func (a *Agent) SubmitSkill(ctx context.Context, nameOrNS, args string) (<-chan Event, error) {
+	a.mu.Lock()
+	reg := a.skills
+	a.mu.Unlock()
+	if reg == nil {
+		return nil, fmt.Errorf("skills: registry not configured")
+	}
+	sk, ok := reg.Resolve(nameOrNS)
+	if !ok {
+		return nil, fmt.Errorf("unknown skill: %s", nameOrNS)
+	}
+	if !sk.Enabled || !sk.UserInvocable {
+		return nil, fmt.Errorf("skill disabled: %s", sk.Name)
+	}
+	body, err := skills.RenderInvocation(sk, args)
+	if err != nil {
+		return nil, err
+	}
+	header := "/" + nameOrNS
+	if args = trimArgs(args); args != "" {
+		header += " " + args
+	}
+	out := make(chan Event, 64)
+	go func() {
+		defer close(out)
+		emitToChan(out, SkillInvoked{
+			Fingerprint: string(sk.Fingerprint),
+			Header:      header,
+			Source:      string(sk.Source),
+			Body:        body,
+		}, ctx)
+		src := a.Submit(ctx, body)
+		for e := range src {
+			emitToChan(out, e, ctx)
+		}
+	}()
+	return out, nil
+}
+
+func trimArgs(s string) string {
+	i, j := 0, len(s)
+	for i < j && (s[i] == ' ' || s[i] == '\t') {
+		i++
+	}
+	for j > i && (s[j-1] == ' ' || s[j-1] == '\t') {
+		j--
+	}
+	return s[i:j]
 }
 
 // Start launches the agent goroutine
