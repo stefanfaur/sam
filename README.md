@@ -100,7 +100,50 @@ redact `Authorization` and `X-Api-Key` headers.
 - `/model <name>` — Set the model for subsequent turns
 - `/provider <name>` — Set the provider (minimax/anthropic)
 - `/cwd` — Show current working directory
+- `/settings` — Open settings modal (statusline, providers, theme, skills)
+- `/reload-skills` — Re-scan skill roots for new or changed skills
 - `/help` — Show this help
+
+User-invocable skills also appear here as `/skill-name [args]`.
+
+## Skills
+
+SAM loads [agentskills.io](https://agentskills.io)-compliant skill bundles
+from three roots (in priority order):
+
+1. `$PROJECT/.sam/skills` — project-scoped, requires trust on first load.
+2. `~/.sam/skills` — personal.
+3. `~/.agents/skills` — tool-agnostic, shared across agents. **Trusted by
+   default** — anything written here runs without a prompt, so be careful what
+   you drop in.
+
+Each skill is a directory whose `SKILL.md` starts with YAML frontmatter:
+
+```markdown
+---
+name: review-pr
+description: Review a GitHub PR. Use when the user asks for a PR review.
+argument-hint: "[pr-number]"
+---
+
+Please review PR #$ARGUMENTS. Look for logic errors, missing tests, …
+```
+
+Invoke as `/review-pr 123`; `$ARGUMENTS` is substituted into the body and the
+rendered message is sent as a normal user turn.
+
+Manage skills via `/settings` → **Skills** tab:
+
+- `x` toggle enabled, `a` toggle auto (model-invocable), `m` toggle manual
+  (user-invocable)
+- `g` toggle the global auto-invocation gate (off by default; when on, a
+  compact `<available_skills>` catalog is injected into the system prompt so
+  the model can pull in skills on demand)
+- `t` opens the trust sub-panel for managing trusted/denied project paths
+- `Ctrl+S` saves to `~/.config/sam/skills.toml`, `Esc` cancels
+
+Reference skills live in `testdata/skills/` — copy any of them into
+`~/.agents/skills/` as a starting point.
 
 ## Architecture
 
