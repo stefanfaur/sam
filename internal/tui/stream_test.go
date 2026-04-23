@@ -41,6 +41,16 @@ func TestBlockScannerSafeSplit(t *testing.T) {
 			input:   []rune("title\n===\n\nbody"),
 			wantIdx: 11,
 		},
+		{
+			name:    "whitespace-only last line without trailing newline does not split",
+			input:   []rune("                                    "),
+			wantIdx: 0,
+		},
+		{
+			name:    "whitespace-only trailing line after content does not overshoot",
+			input:   []rune("para\n    "),
+			wantIdx: 0,
+		},
 	}
 
 	for _, tt := range tests {

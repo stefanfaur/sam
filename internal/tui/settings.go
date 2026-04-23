@@ -12,10 +12,15 @@ type Settings struct {
 	Statusbar StatusbarSettings `toml:"statusbar"`
 	Theme     ThemeSettings     `toml:"theme"`
 	Thinking  ThinkingSettings  `toml:"thinking"`
+	Agent     AgentSettings     `toml:"agent"`
 }
 
 type ThinkingSettings struct {
 	StreamMode string `toml:"stream_mode"` // "full" | "header"
+}
+
+type AgentSettings struct {
+	MaxIterations int `toml:"max_iterations"`
 }
 
 type StatusbarSettings struct {
@@ -83,12 +88,16 @@ func DefaultSettings() Settings {
 			StateApproval:   "#a78bfa",
 		},
 		Thinking: ThinkingSettings{StreamMode: "full"},
+		Agent:    AgentSettings{MaxIterations: 50},
 	}
 }
 
 func normalizeSettings(s Settings) Settings {
 	if s.Thinking.StreamMode != "full" && s.Thinking.StreamMode != "header" {
 		s.Thinking.StreamMode = "full"
+	}
+	if s.Agent.MaxIterations <= 0 {
+		s.Agent.MaxIterations = 50
 	}
 	return s
 }

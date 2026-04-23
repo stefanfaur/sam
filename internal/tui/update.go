@@ -273,11 +273,29 @@ func (m *Model) handleKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 			m.input, cmd = m.input.Update(msg)
 			return m, cmd
 		}
-		text := strings.TrimSpace(m.input.Value())
+		// Alt+Enter always inserts a newline (textarea keymap matches "alt+enter").
+		if msg.Alt {
+			m.growInputForNewline()
+			var cmd tea.Cmd
+			m.input, cmd = m.input.Update(msg)
+			return m, cmd
+		}
+		// Trailing backslash continuation: "foo\" + Enter becomes "foo\n".
+		raw := m.input.Value()
+		if strings.HasSuffix(raw, "\\") {
+			m.input.SetValue(strings.TrimSuffix(raw, "\\"))
+			m.input.CursorEnd()
+			m.growInputForNewline()
+			var cmd tea.Cmd
+			m.input, cmd = m.input.Update(tea.KeyMsg{Type: tea.KeyCtrlJ})
+			return m, cmd
+		}
+		text := strings.TrimSpace(raw)
 		if text == "" {
 			return m, nil
 		}
 		m.input.Reset()
+		m.adjustInputHeight()
 		m.suggest.active = false
 		return m.startTurn(text)
 	}
@@ -285,10 +303,44 @@ func (m *Model) handleKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 	if m.approval != nil {
 		return m, m.approval.Update(msg)
 	}
+	// Pre-grow input for keys that will insert a newline so the textarea
+	// viewport has room on the new line and doesn't scroll line 0 (with the
+	// prompt arrow) out of view.
+	if msg.Type == tea.KeyCtrlJ || msg.String() == "shift+enter" {
+		m.growInputForNewline()
+	}
 	var cmd tea.Cmd
 	m.input, cmd = m.input.Update(msg)
+	m.adjustInputHeight()
 	m.refreshSuggestions()
 	return m, cmd
+}
+
+// adjustInputHeight grows the textarea to fit its content, clamped to a
+// reasonable max so the input box doesn't swallow scrollback on long pastes.
+const maxInputHeight = 10
+
+func (m *Model) adjustInputHeight() {
+	m.setInputHeight(m.input.LineCount())
+}
+
+func (m *Model) setInputHeight(n int) {
+	if n < 1 {
+		n = 1
+	}
+	if n > maxInputHeight {
+		n = maxInputHeight
+	}
+	if n != m.input.Height() {
+		m.input.SetHeight(n)
+	}
+}
+
+// growInputForNewline enlarges the input box ahead of a newline insertion so
+// the textarea's internal viewport has room for the cursor on the new line
+// instead of scrolling the first line (prompt arrow) out of view.
+func (m *Model) growInputForNewline() {
+	m.setInputHeight(m.input.LineCount() + 1)
 }
 
 func (m *Model) refreshSuggestions() {
@@ -964,6 +1016,7 @@ func (m *Model) applyAgentEvent(ev Event) {
 			m.pending.tools = append(m.pending.tools, tc)
 		}
 		tc.Output = ev.Output
+		tc.Rewritten = ev.Rewritten
 		tc.IsError = ev.IsError
 		tc.EndedAt = time.Now()
 		tc.Lines = countLines(ev.Output)

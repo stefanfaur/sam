@@ -4,6 +4,7 @@ import (
 	"encoding/json"
 	"time"
 
+	"github.com/charmbracelet/bubbles/key"
 	"github.com/charmbracelet/bubbles/textarea"
 	"github.com/charmbracelet/bubbles/viewport"
 	"github.com/charmbracelet/lipgloss"
@@ -30,6 +31,7 @@ type toolCardState struct {
 	Name      string
 	Input     json.RawMessage
 	Output    string
+	Rewritten string
 	Lines     int
 	EditLines int
 	Bytes     int
@@ -203,10 +205,22 @@ func New(a *agent.Agent, ring *logging.Ring, opts Options) *Model {
 
 	ta := textarea.New()
 	ta.Placeholder = ""
-	ta.Prompt = "❯ "
+	ta.SetPromptFunc(2, func(lineIdx int) string {
+		if lineIdx == 0 {
+			return "❯ "
+		}
+		return "  "
+	})
 	ta.ShowLineNumbers = false
 	ta.CharLimit = 0
 	ta.SetHeight(1)
+	// Plain Enter submits the turn; newline insertion uses ctrl+j, alt+enter,
+	// shift+enter (kitty-capable terminals), or a trailing backslash. Unbind
+	// ctrl+m since many terminals send it for Enter.
+	ta.KeyMap.InsertNewline = key.NewBinding(
+		key.WithKeys("ctrl+j", "alt+enter", "shift+enter"),
+		key.WithHelp("shift+enter", "insert newline"),
+	)
 	ta.FocusedStyle.Prompt = theme.InputPrompt
 	ta.BlurredStyle.Prompt = theme.InputPrompt.Foreground(lipgloss.Color("240"))
 	ta.FocusedStyle.CursorLine = lipgloss.NewStyle()
@@ -216,7 +230,11 @@ func New(a *agent.Agent, ring *logging.Ring, opts Options) *Model {
 	ta.Focus()
 
 	if opts.MaxIter == 0 {
-		opts.MaxIter = 25
+		opts.MaxIter = 50
+	}
+	if settings.Agent.MaxIterations > 0 {
+		opts.MaxIter = settings.Agent.MaxIterations
+		a.SetMaxIters(settings.Agent.MaxIterations)
 	}
 
 	return &Model{

@@ -65,7 +65,12 @@ func (s *blockScanner) SafeSplit(tail []rune) int {
 			if i+1 < len(lines) && isSetextUnderline(lines[i+1]) {
 				continue
 			}
-			return lineStart + len(line) + 1
+			end := lineStart + len(line) + 1
+			if end > len(tail) {
+				// Last line has no terminating newline; still streaming. Defer split.
+				return 0
+			}
+			return end
 		}
 	}
 

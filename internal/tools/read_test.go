@@ -2,14 +2,16 @@ package tools
 
 import (
 	"context"
+	"errors"
 	"os"
 	"path/filepath"
+	"strings"
 	"testing"
 )
 
 func TestReadRelativePath(t *testing.T) {
 	tracker := NewReadTracker()
-	tool := NewRead(tracker, "test")
+	tool := NewRead(tracker, nil, "test")
 
 	result, err := tool.Run(context.Background(), []byte(`{"file_path": "relative/path.go"}`))
 	if err != nil {
@@ -22,7 +24,7 @@ func TestReadRelativePath(t *testing.T) {
 
 func TestReadNonExistent(t *testing.T) {
 	tracker := NewReadTracker()
-	tool := NewRead(tracker, "test")
+	tool := NewRead(tracker, nil, "test")
 
 	result, err := tool.Run(context.Background(), []byte(`{"file_path": "/nonexistent/file.go"}`))
 	if err != nil {
@@ -43,7 +45,7 @@ func TestReadSuccess(t *testing.T) {
 	}
 
 	tracker := NewReadTracker()
-	tool := NewRead(tracker, "test")
+	tool := NewRead(tracker, nil, "test")
 
 	result, err := tool.Run(context.Background(), []byte(`{"file_path": "`+tmpFile+`"}`))
 	if err != nil {
@@ -79,7 +81,7 @@ func TestReadOffsetLimit(t *testing.T) {
 	}
 
 	tracker := NewReadTracker()
-	tool := NewRead(tracker, "test")
+	tool := NewRead(tracker, nil, "test")
 
 	// Read with offset 3, limit 5
 	result, err := tool.Run(context.Background(), []byte(`{"file_path": "`+tmpFile+`", "offset": 3, "limit": 5}`))
@@ -92,6 +94,124 @@ func TestReadOffsetLimit(t *testing.T) {
 	_ = lines
 }
 
+func TestReadRTKDefaultWindowUsesRTK(t *testing.T) {
+	tmp := filepath.Join(t.TempDir(), "x.txt")
+	if err := os.WriteFile(tmp, []byte("a\nb\n"), 0644); err != nil {
+		t.Fatal(err)
+	}
+	rt := &fakeRTK{enabled: true, readOut: []byte("1 | a\n2 | b")}
+	tracker := NewReadTracker()
+	tool := NewRead(tracker, rt, "test")
+
+	r, err := tool.Run(context.Background(), []byte(`{"file_path":"`+tmp+`"}`))
+	if err != nil {
+		t.Fatalf("run error: %v", err)
+	}
+	if !rt.readCalled {
+		t.Fatal("rtk.Read must be called for default window")
+	}
+	if r.Output != "1 | a\n2 | b" {
+		t.Fatalf("expected verbatim rtk output, got %q", r.Output)
+	}
+	if !tracker.Seen(tmp) {
+		t.Fatal("tracker must be marked on rtk path")
+	}
+}
+
+func TestReadRTKRawBypasses(t *testing.T) {
+	tmp := filepath.Join(t.TempDir(), "x.txt")
+	if err := os.WriteFile(tmp, []byte("a\nb\n"), 0644); err != nil {
+		t.Fatal(err)
+	}
+	rt := &fakeRTK{enabled: true, readOut: []byte("never")}
+	tool := NewRead(NewReadTracker(), rt, "test")
+
+	r, err := tool.Run(context.Background(), []byte(`{"file_path":"`+tmp+`","raw":true}`))
+	if err != nil {
+		t.Fatalf("run error: %v", err)
+	}
+	if rt.readCalled {
+		t.Fatal("rtk must not be called when raw=true")
+	}
+	if !strings.Contains(r.Output, "a") {
+		t.Fatalf("expected native output, got %q", r.Output)
+	}
+}
+
+func TestReadRTKExplicitOffsetBypasses(t *testing.T) {
+	tmp := filepath.Join(t.TempDir(), "x.txt")
+	if err := os.WriteFile(tmp, []byte("a\nb\nc\n"), 0644); err != nil {
+		t.Fatal(err)
+	}
+	rt := &fakeRTK{enabled: true, readOut: []byte("never")}
+	tool := NewRead(NewReadTracker(), rt, "test")
+
+	r, err := tool.Run(context.Background(), []byte(`{"file_path":"`+tmp+`","offset":2}`))
+	if err != nil {
+		t.Fatalf("run error: %v", err)
+	}
+	if rt.readCalled {
+		t.Fatal("rtk must not be called with explicit offset")
+	}
+	if strings.Contains(r.Output, "\ta\n") {
+		t.Fatalf("expected offset to skip first line, got %q", r.Output)
+	}
+}
+
+func TestReadRTKExplicitLimitBypasses(t *testing.T) {
+	tmp := filepath.Join(t.TempDir(), "x.txt")
+	if err := os.WriteFile(tmp, []byte("a\nb\nc\n"), 0644); err != nil {
+		t.Fatal(err)
+	}
+	rt := &fakeRTK{enabled: true, readOut: []byte("never")}
+	tool := NewRead(NewReadTracker(), rt, "test")
+
+	_, err := tool.Run(context.Background(), []byte(`{"file_path":"`+tmp+`","limit":1}`))
+	if err != nil {
+		t.Fatalf("run error: %v", err)
+	}
+	if rt.readCalled {
+		t.Fatal("rtk must not be called with explicit limit")
+	}
+}
+
+func TestReadRTKDisabledUsesNative(t *testing.T) {
+	tmp := filepath.Join(t.TempDir(), "x.txt")
+	if err := os.WriteFile(tmp, []byte("a\n"), 0644); err != nil {
+		t.Fatal(err)
+	}
+	rt := &fakeRTK{enabled: false, readOut: []byte("never")}
+	tool := NewRead(NewReadTracker(), rt, "test")
+
+	_, err := tool.Run(context.Background(), []byte(`{"file_path":"`+tmp+`"}`))
+	if err != nil {
+		t.Fatalf("run error: %v", err)
+	}
+	if rt.readCalled {
+		t.Fatal("rtk must not be called when disabled")
+	}
+}
+
+func TestReadRTKError(t *testing.T) {
+	tmp := filepath.Join(t.TempDir(), "x.txt")
+	if err := os.WriteFile(tmp, []byte("a\n"), 0644); err != nil {
+		t.Fatal(err)
+	}
+	rt := &fakeRTK{enabled: true, readErr: errors.New("rtk crashed")}
+	tool := NewRead(NewReadTracker(), rt, "test")
+
+	r, err := tool.Run(context.Background(), []byte(`{"file_path":"`+tmp+`"}`))
+	if err != nil {
+		t.Fatalf("run error: %v", err)
+	}
+	if !r.IsError {
+		t.Fatal("expected IsError on rtk failure")
+	}
+	if !strings.Contains(r.Output, "rtk read failed") {
+		t.Fatalf("expected rtk error message, got %q", r.Output)
+	}
+}
+
 func TestReadBinaryFile(t *testing.T) {
 	// Create binary file
 	tmpDir := t.TempDir()
@@ -102,7 +222,7 @@ func TestReadBinaryFile(t *testing.T) {
 	}
 
 	tracker := NewReadTracker()
-	tool := NewRead(tracker, "test")
+	tool := NewRead(tracker, nil, "test")
 
 	result, err := tool.Run(context.Background(), []byte(`{"file_path": "`+tmpFile+`"}`))
 	if err != nil {

@@ -51,7 +51,7 @@ func (a *Agent) turn(ctx context.Context, s submit) {
 				Output:    res.Output,
 				IsError:   res.IsError,
 			})
-			emitToChan(s.out, ToolResult{ID: call.ID, Name: call.Name, Output: res.Output, IsError: res.IsError}, s.ctx)
+			emitToChan(s.out, ToolResult{ID: call.ID, Name: call.Name, Output: res.Output, IsError: res.IsError, Rewritten: res.Rewritten}, s.ctx)
 		}
 
 		a.history = append(a.history, llm.Message{Role: llm.RoleUser, Content: results})

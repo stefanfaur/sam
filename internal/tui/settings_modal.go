@@ -1,6 +1,8 @@
 package tui
 
 import (
+	"fmt"
+	"strconv"
 	"strings"
 	"time"
 
@@ -54,6 +56,7 @@ type settingsModal struct {
 	providers map[string]config.ProviderEntry
 
 	selectedSegments []string
+	maxItersStr      string
 
 	factory ProviderFactory
 	skills  *skillsWidget
@@ -69,6 +72,7 @@ func newSettingsModal(current Settings, curProvider string, factory ProviderFact
 		skills:       newSkillsWidget(skillReg),
 	}
 	m.selectedSegments = segmentsStructToSlice(current.Statusbar.Segments)
+	m.maxItersStr = strconv.Itoa(current.Agent.MaxIterations)
 	km := settingsKeyMap()
 	m.forms[tabStatusline] = m.buildStatuslineForm().WithKeyMap(km)
 	m.forms[tabProviders] = m.buildProvidersForm().WithKeyMap(km)
@@ -164,8 +168,15 @@ func (m *settingsModal) Apply(root *Model) tea.Cmd {
 	if probeTheme.Glamour() == nil {
 		return root.addInfo("save aborted: glamour style invalid")
 	}
+	if n, err := strconv.Atoi(strings.TrimSpace(m.maxItersStr)); err == nil && n > 0 {
+		m.pending.Agent.MaxIterations = n
+	}
 	if err := SaveSettings(m.pending); err != nil {
 		return root.addInfo("save settings failed: " + err.Error())
+	}
+	if root.agent != nil && m.pending.Agent.MaxIterations > 0 {
+		root.agent.SetMaxIters(m.pending.Agent.MaxIterations)
+		root.status.maxIter = m.pending.Agent.MaxIterations
 	}
 	if cmd := m.applyProviders(root); cmd != nil {
 		return cmd
@@ -231,8 +242,27 @@ func (m *settingsModal) buildStatuslineForm() *huh.Form {
 					huh.NewOption("full", "full"),
 					huh.NewOption("header", "header"),
 				).Value(&m.pending.Thinking.StreamMode),
+			huh.NewInput().
+				Title("Max tool iterations per turn").
+				Value(&m.maxItersStr).
+				Validate(validatePositiveInt),
 		),
-	).WithShowHelp(true).WithShowErrors(false)
+	).WithShowHelp(true).WithShowErrors(true)
+}
+
+func validatePositiveInt(s string) error {
+	s = strings.TrimSpace(s)
+	if s == "" {
+		return fmt.Errorf("required")
+	}
+	n, err := strconv.Atoi(s)
+	if err != nil {
+		return fmt.Errorf("not a number")
+	}
+	if n <= 0 {
+		return fmt.Errorf("must be > 0")
+	}
+	return nil
 }
 
 func (m *settingsModal) buildProvidersForm() *huh.Form {

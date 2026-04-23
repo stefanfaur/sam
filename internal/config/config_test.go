@@ -9,6 +9,8 @@ import (
 func TestLoadDefaults(t *testing.T) {
 	dir := t.TempDir()
 	t.Setenv("XDG_CONFIG_HOME", dir)
+	t.Setenv("XDG_STATE_HOME", dir)
+	t.Setenv("HOME", dir)
 	t.Setenv("SAM_PROVIDER", "")
 	t.Setenv("SAM_MODEL", "")
 
@@ -32,6 +34,8 @@ func TestLoadDefaults(t *testing.T) {
 func TestLoadFromFile(t *testing.T) {
 	dir := t.TempDir()
 	t.Setenv("XDG_CONFIG_HOME", dir)
+	t.Setenv("XDG_STATE_HOME", dir)
+	t.Setenv("HOME", dir)
 	if err := os.MkdirAll(filepath.Join(dir, "sam"), 0o755); err != nil {
 		t.Fatal(err)
 	}
@@ -64,6 +68,8 @@ default_model = "claude-sonnet-4-6"
 func TestOverridesWin(t *testing.T) {
 	dir := t.TempDir()
 	t.Setenv("XDG_CONFIG_HOME", dir)
+	t.Setenv("XDG_STATE_HOME", dir)
+	t.Setenv("HOME", dir)
 	t.Setenv("SAM_PROVIDER", "anthropic")
 
 	cfg, err := Load(Overrides{Provider: "minimax", Model: "MiniMax-M2.7"})
@@ -78,6 +84,8 @@ func TestOverridesWin(t *testing.T) {
 func TestInvalidProvider(t *testing.T) {
 	dir := t.TempDir()
 	t.Setenv("XDG_CONFIG_HOME", dir)
+	t.Setenv("XDG_STATE_HOME", dir)
+	t.Setenv("HOME", dir)
 	if _, err := Load(Overrides{Provider: "nope"}); err == nil {
 		t.Fatal("expected invalid provider error")
 	}
@@ -86,6 +94,8 @@ func TestInvalidProvider(t *testing.T) {
 func TestFullReplaceOnUserEntry(t *testing.T) {
 	dir := t.TempDir()
 	t.Setenv("XDG_CONFIG_HOME", dir)
+	t.Setenv("XDG_STATE_HOME", dir)
+	t.Setenv("HOME", dir)
 	if err := os.MkdirAll(filepath.Join(dir, "sam"), 0o755); err != nil {
 		t.Fatal(err)
 	}
@@ -116,6 +126,8 @@ api_key_env = "OPENAI_API_KEY"
 func TestUserDefinedProviderAppends(t *testing.T) {
 	dir := t.TempDir()
 	t.Setenv("XDG_CONFIG_HOME", dir)
+	t.Setenv("XDG_STATE_HOME", dir)
+	t.Setenv("HOME", dir)
 	if err := os.MkdirAll(filepath.Join(dir, "sam"), 0o755); err != nil {
 		t.Fatal(err)
 	}
@@ -149,6 +161,8 @@ default_model = "llama-3.3-70b-versatile"
 func TestInvalidWireErrors(t *testing.T) {
 	dir := t.TempDir()
 	t.Setenv("XDG_CONFIG_HOME", dir)
+	t.Setenv("XDG_STATE_HOME", dir)
+	t.Setenv("HOME", dir)
 	if err := os.MkdirAll(filepath.Join(dir, "sam"), 0o755); err != nil {
 		t.Fatal(err)
 	}
@@ -170,6 +184,8 @@ api_key_env = "X"
 func TestPerModelReasoningEffort(t *testing.T) {
 	dir := t.TempDir()
 	t.Setenv("XDG_CONFIG_HOME", dir)
+	t.Setenv("XDG_STATE_HOME", dir)
+	t.Setenv("HOME", dir)
 	if err := os.MkdirAll(filepath.Join(dir, "sam"), 0o755); err != nil {
 		t.Fatal(err)
 	}

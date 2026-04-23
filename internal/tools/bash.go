@@ -16,6 +16,7 @@ import (
 type BashInput struct {
 	Command   string  `json:"command" jsonschema:"required,description=Shell command executed via bash -c."`
 	TimeoutMS flexInt `json:"timeout_ms,omitempty" jsonschema:"description=Max 600000 (10 min). Default 120000 (2 min)."`
+	Raw       bool    `json:"raw,omitempty" jsonschema:"description=Skip rtk compression; run the command as-is. Use when exact output bytes matter (diff application, stderr inspection)."`
 }
 
 const (
@@ -51,13 +52,13 @@ func (lw *limitedWriter) Write(p []byte) (int, error) {
 	return n, err
 }
 
-func NewBash(launchDir, description string) Tool {
+func NewBash(launchDir string, rtkClient RTKClient, description string) Tool {
 	return New[BashInput]("Bash", description, func(ctx context.Context, in BashInput) (Result, error) {
-		return runBash(ctx, in, launchDir)
+		return runBash(ctx, in, launchDir, rtkClient)
 	})
 }
 
-func runBash(ctx context.Context, in BashInput, launchDir string) (Result, error) {
+func runBash(ctx context.Context, in BashInput, launchDir string, rtkClient RTKClient) (Result, error) {
 	if strings.TrimSpace(in.Command) == "" {
 		return Result{Output: "command is empty", IsError: true}, nil
 	}
@@ -70,10 +71,23 @@ func runBash(ctx context.Context, in BashInput, launchDir string) (Result, error
 		timeout = maxBashTimeout
 	}
 
+	effective := in.Command
+	rewritten := ""
+	if rtkClient != nil && rtkClient.Enabled() && !in.Raw {
+		r, supported, err := rtkClient.Rewrite(ctx, in.Command)
+		if err != nil {
+			return Result{Output: "rtk rewrite failed: " + err.Error(), IsError: true}, nil
+		}
+		if supported {
+			rewritten = r
+			effective = r
+		}
+	}
+
 	runCtx, cancel := context.WithTimeout(ctx, timeout)
 	defer cancel()
 
-	cmd := exec.Command("bash", "-c", in.Command)
+	cmd := exec.Command("bash", "-c", effective)
 	cmd.Dir = launchDir
 	cmd.Env = os.Environ()
 
@@ -131,12 +145,12 @@ func runBash(ctx context.Context, in BashInput, launchDir string) (Result, error
 
 	if timedOut {
 		buf.WriteString("<timeout>true</timeout>\n")
-		return Result{Output: buf.String(), IsError: true}, nil
+		return Result{Output: buf.String(), IsError: true, Rewritten: rewritten}, nil
 	}
 	if runErr != nil {
 		if _, ok := runErr.(*exec.ExitError); !ok {
-			return Result{Output: buf.String() + "<error>" + runErr.Error() + "</error>\n", IsError: true}, nil
+			return Result{Output: buf.String() + "<error>" + runErr.Error() + "</error>\n", IsError: true, Rewritten: rewritten}, nil
 		}
 	}
-	return Result{Output: buf.String()}, nil
+	return Result{Output: buf.String(), Rewritten: rewritten}, nil
 }

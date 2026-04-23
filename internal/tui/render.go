@@ -199,10 +199,10 @@ func renderToolCardSettled(t *Theme, tc *toolCardState, now time.Time, innerWidt
 		// Can't easily truncate a styled string without breaking ANSI; the
 		// cheapest safe option is to let lipgloss soft-wrap the rendered head,
 		// then append the hint on its own line.
-		return head + "\n" + hint + maybeErrorPeek(t, tc, innerWidth)
+		return head + "\n" + hint + maybeRewrittenPeek(t, tc, innerWidth) + maybeErrorPeek(t, tc, innerWidth)
 	}
 	line := head + "  " + hint
-	return line + maybeErrorPeek(t, tc, innerWidth)
+	return line + maybeRewrittenPeek(t, tc, innerWidth) + maybeErrorPeek(t, tc, innerWidth)
 }
 
 // settledToolDetail returns an optional per-tool detail suffix (e.g. the Bash
@@ -221,6 +221,21 @@ func settledToolDetail(tc *toolCardState) string {
 		}
 	}
 	return ""
+}
+
+// maybeRewrittenPeek returns an indented dim subline showing the rtk-rewritten
+// command, prefixed with "↳". Empty when no rewrite occurred or the card was
+// cancelled. The original command stays on the primary line via
+// settledToolDetail so the user always sees both.
+func maybeRewrittenPeek(t *Theme, tc *toolCardState, innerWidth int) string {
+	if tc.Cancelled || tc.Rewritten == "" {
+		return ""
+	}
+	text := strings.ReplaceAll(tc.Rewritten, "\n", " ⏎ ")
+	if innerWidth > 6 {
+		text = truncate(text, innerWidth-6)
+	}
+	return "\n  " + t.ToolCardMeta.Render("↳ "+text)
 }
 
 // maybeErrorPeek returns an indented error-colored second line with the first

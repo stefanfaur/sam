@@ -17,6 +17,7 @@ import (
 	"github.com/stefanfaur/sam/internal/llm/registry"
 	"github.com/stefanfaur/sam/internal/logging"
 	"github.com/stefanfaur/sam/internal/policy"
+	"github.com/stefanfaur/sam/internal/rtk"
 	"github.com/stefanfaur/sam/internal/skills"
 	"github.com/stefanfaur/sam/internal/system"
 	"github.com/stefanfaur/sam/internal/tools"
@@ -52,15 +53,27 @@ func main() {
 	ctx, stop := signal.NotifyContext(context.Background(), os.Interrupt, syscall.SIGTERM)
 	defer stop()
 
+	rtkClient := rtk.New(rtk.Mode(cfg.RTK.Mode))
+	if err := rtkClient.Detect(ctx); err != nil {
+		logger.Error("rtk detection failed", "mode", cfg.RTK.Mode, "err", err)
+		fmt.Fprintln(os.Stderr, "rtk error:", err)
+		os.Exit(2)
+	}
+	if rtkClient.Enabled() {
+		logger.Info("rtk enabled", "version", rtkClient.Version(), "mode", cfg.RTK.Mode)
+	} else {
+		logger.Info("rtk disabled", "mode", cfg.RTK.Mode)
+	}
+
 	if *prompt != "" {
-		if err := runAgentOneShot(ctx, cfg, sysDir, *prompt, logger); err != nil {
+		if err := runAgentOneShot(ctx, cfg, sysDir, *prompt, logger, rtkClient); err != nil {
 			fmt.Fprintln(os.Stderr, "error:", err)
 			os.Exit(1)
 		}
 		return
 	}
 
-	runTUI(ctx, cfg, sysDir, logger, ring)
+	runTUI(ctx, cfg, sysDir, logger, ring, rtkClient)
 }
 
 func mustProvider(cfg *config.Config) llm.Provider {
@@ -85,7 +98,7 @@ func buildProvider(cfg *config.Config, name, model string) (llm.Provider, error)
 	return registry.Build(entry, model, resolver)
 }
 
-func buildRegistry(cwd, sysDir string) (*tools.Registry, *tools.ReadTracker) {
+func buildRegistry(cwd, sysDir string, rtkClient *rtk.Client) (*tools.Registry, *tools.ReadTracker) {
 	desc := func(name string) string {
 		s, _ := system.LoadToolDescription(sysDir, name)
 		if s == "" {
@@ -95,16 +108,16 @@ func buildRegistry(cwd, sysDir string) (*tools.Registry, *tools.ReadTracker) {
 	}
 	tracker := tools.NewReadTracker()
 	reg := tools.NewRegistry()
-	reg.Register(tools.NewRead(tracker, desc("Read")))
+	reg.Register(tools.NewRead(tracker, rtkClient, desc("Read")))
 	reg.Register(tools.NewWrite(tracker, desc("Write")))
 	reg.Register(tools.NewEdit(tracker, desc("Edit")))
-	reg.Register(tools.NewBash(cwd, desc("Bash")))
+	reg.Register(tools.NewBash(cwd, rtkClient, desc("Bash")))
 	return reg, tracker
 }
 
-func runTUI(ctx context.Context, cfg *config.Config, sysDir string, logger *slog.Logger, ring *logging.Ring) {
+func runTUI(ctx context.Context, cfg *config.Config, sysDir string, logger *slog.Logger, ring *logging.Ring, rtkClient *rtk.Client) {
 	cwd, _ := os.Getwd()
-	registry, _ := buildRegistry(cwd, sysDir)
+	registry, _ := buildRegistry(cwd, sysDir, rtkClient)
 
 	pol := policy.Default()
 	prov := mustProvider(cfg)
@@ -173,9 +186,9 @@ func buildSkillsRegistry(cwd string, logger *slog.Logger) *skills.Registry {
 	return reg
 }
 
-func runAgentOneShot(ctx context.Context, cfg *config.Config, sysDir, prompt string, logger *slog.Logger) error {
+func runAgentOneShot(ctx context.Context, cfg *config.Config, sysDir, prompt string, logger *slog.Logger, rtkClient *rtk.Client) error {
 	cwd, _ := os.Getwd()
-	registry, _ := buildRegistry(cwd, sysDir)
+	registry, _ := buildRegistry(cwd, sysDir, rtkClient)
 	pol := policy.AllowAll()
 	prov := mustProvider(cfg)
 	diskPrompt, _ := system.LoadSystemPrompt(sysDir)

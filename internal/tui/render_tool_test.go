@@ -127,6 +127,47 @@ func TestToolSummary_PerTool(t *testing.T) {
 	}
 }
 
+func TestRenderToolCard_RewrittenSubline(t *testing.T) {
+	th := NewTheme(DefaultSettings().Theme)
+	tc := &toolCardState{
+		Name:      "Bash",
+		Input:     json.RawMessage(`{"command":"git status"}`),
+		Output:    "ok\n",
+		Rewritten: "rtk git status",
+		Lines:     1,
+		StartedAt: time.Now().Add(-200 * time.Millisecond),
+		EndedAt:   time.Now(),
+		Index:     1,
+	}
+	out := renderToolCard(th, tc, time.Now(), 0, 80)
+	if !strings.Contains(out, "git status") {
+		t.Errorf("expected original command on primary line: %q", out)
+	}
+	if !strings.Contains(out, "↳") {
+		t.Errorf("expected ↳ marker for rewritten subline: %q", out)
+	}
+	if !strings.Contains(out, "rtk git status") {
+		t.Errorf("expected rewritten command in subline: %q", out)
+	}
+}
+
+func TestRenderToolCard_NoRewrittenSuppressesSubline(t *testing.T) {
+	th := NewTheme(DefaultSettings().Theme)
+	tc := &toolCardState{
+		Name:      "Bash",
+		Input:     json.RawMessage(`{"command":"echo hi"}`),
+		Output:    "hi\n",
+		Lines:     1,
+		StartedAt: time.Now().Add(-50 * time.Millisecond),
+		EndedAt:   time.Now(),
+		Index:     2,
+	}
+	out := renderToolCard(th, tc, time.Now(), 0, 80)
+	if strings.Contains(out, "↳") {
+		t.Errorf("subline must not appear without rewritten: %q", out)
+	}
+}
+
 func TestRenderToolCard_NarrowTerminalHintWraps(t *testing.T) {
 	th := NewTheme(DefaultSettings().Theme)
 	tc := &toolCardState{

@@ -2,6 +2,7 @@ package tools
 
 import (
 	"context"
+	"errors"
 	"strings"
 	"testing"
 	"time"
@@ -9,11 +10,33 @@ import (
 
 func runBashTool(t *testing.T, cwd string, in string) Result {
 	t.Helper()
-	r, err := NewBash(cwd, "test").Run(context.Background(), []byte(in))
+	r, err := NewBash(cwd, nil, "test").Run(context.Background(), []byte(in))
 	if err != nil {
 		t.Fatalf("run error: %v", err)
 	}
 	return r
+}
+
+// fakeRTK implements RTKClient for tool tests.
+type fakeRTK struct {
+	enabled        bool
+	rewriteOut     string
+	rewriteSupport bool
+	rewriteErr     error
+	rewriteCalled  bool
+	readOut        []byte
+	readErr        error
+	readCalled     bool
+}
+
+func (f *fakeRTK) Enabled() bool { return f.enabled }
+func (f *fakeRTK) Rewrite(ctx context.Context, cmd string) (string, bool, error) {
+	f.rewriteCalled = true
+	return f.rewriteOut, f.rewriteSupport, f.rewriteErr
+}
+func (f *fakeRTK) Read(ctx context.Context, path string) ([]byte, error) {
+	f.readCalled = true
+	return f.readOut, f.readErr
 }
 
 func TestBashStdout(t *testing.T) {
@@ -78,5 +101,89 @@ func TestBashEmptyCommand(t *testing.T) {
 	r := runBashTool(t, t.TempDir(), `{"command":""}`)
 	if !r.IsError {
 		t.Fatal("empty command should error")
+	}
+}
+
+func TestBashRawBypassesRTK(t *testing.T) {
+	rt := &fakeRTK{enabled: true, rewriteOut: "echo replaced", rewriteSupport: true}
+	r, err := NewBash(t.TempDir(), rt, "test").Run(context.Background(),
+		[]byte(`{"command":"echo hi","raw":true}`))
+	if err != nil {
+		t.Fatalf("run error: %v", err)
+	}
+	if rt.rewriteCalled {
+		t.Fatal("rtk rewrite must not be called when raw=true")
+	}
+	if !strings.Contains(r.Output, "hi") {
+		t.Fatalf("expected original stdout, got %q", r.Output)
+	}
+	if r.Rewritten != "" {
+		t.Fatalf("Rewritten must be empty when raw=true, got %q", r.Rewritten)
+	}
+}
+
+func TestBashRTKDisabledSkipsRewrite(t *testing.T) {
+	rt := &fakeRTK{enabled: false, rewriteOut: "echo replaced", rewriteSupport: true}
+	r, err := NewBash(t.TempDir(), rt, "test").Run(context.Background(),
+		[]byte(`{"command":"echo hi"}`))
+	if err != nil {
+		t.Fatalf("run error: %v", err)
+	}
+	if rt.rewriteCalled {
+		t.Fatal("rtk rewrite must not be called when disabled")
+	}
+	if !strings.Contains(r.Output, "hi") {
+		t.Fatalf("expected original stdout, got %q", r.Output)
+	}
+}
+
+func TestBashRTKRewriteReplacesCommand(t *testing.T) {
+	rt := &fakeRTK{enabled: true, rewriteOut: "echo rewritten", rewriteSupport: true}
+	r, err := NewBash(t.TempDir(), rt, "test").Run(context.Background(),
+		[]byte(`{"command":"echo original"}`))
+	if err != nil {
+		t.Fatalf("run error: %v", err)
+	}
+	if !rt.rewriteCalled {
+		t.Fatal("rtk rewrite must be called")
+	}
+	if !strings.Contains(r.Output, "rewritten") {
+		t.Fatalf("expected rewritten command to execute, got %q", r.Output)
+	}
+	if r.Rewritten != "echo rewritten" {
+		t.Fatalf("Rewritten should carry the rewrite, got %q", r.Rewritten)
+	}
+}
+
+func TestBashRTKUnsupportedKeepsOriginal(t *testing.T) {
+	rt := &fakeRTK{enabled: true, rewriteSupport: false}
+	r, err := NewBash(t.TempDir(), rt, "test").Run(context.Background(),
+		[]byte(`{"command":"echo original"}`))
+	if err != nil {
+		t.Fatalf("run error: %v", err)
+	}
+	if !rt.rewriteCalled {
+		t.Fatal("rtk rewrite must be called")
+	}
+	if !strings.Contains(r.Output, "original") {
+		t.Fatalf("expected original stdout, got %q", r.Output)
+	}
+	if r.Rewritten != "" {
+		t.Fatalf("Rewritten must be empty when rtk unsupported, got %q", r.Rewritten)
+	}
+}
+
+func TestBashRTKRewriteError(t *testing.T) {
+	rt := &fakeRTK{enabled: true, rewriteErr: errors.New("rtk crashed")}
+	r, err := NewBash(t.TempDir(), rt, "test").Run(context.Background(),
+		[]byte(`{"command":"echo original"}`))
+	if err != nil {
+		t.Fatalf("run error: %v", err)
+	}
+	if !r.IsError {
+		t.Fatal("expected IsError when rtk rewrite fails")
+	}
+	if !strings.Contains(r.Output, "rtk rewrite failed") {
+		t.Fatalf("expected rtk error message, got %q", r.Output)
 	}
 }

@@ -172,10 +172,60 @@ OPENAI_API_KEY=sk-... sam
 
 ## Tools
 
-- **Read** — Read file contents with line numbers (default: Allow)
+- **Read** — Read file contents with line numbers (default: Allow). Supports optional `raw: true` to skip rtk compression and return exact lines (use for precise editing).
 - **Write** — Write files (default: Ask, requires Read first)
 - **Edit** — Edit files with exact string replacement (default: Ask, requires Read first)
-- **Bash** — Execute shell commands (default: Ask)
+- **Bash** — Execute shell commands (default: Ask). Supports optional `raw: true` to skip rtk compression and run the command verbatim (use when output bytes matter, e.g. applying diffs).
+
+## RTK Integration
+
+SAM integrates [rtk](https://github.com/rtk-ai/rtk) (Rust Token Killer) as a
+transparent compression layer for the `Bash` and `Read` tools. When rtk is on
+PATH, Bash commands flow through `rtk rewrite <cmd>` and full-file Reads flow
+through `rtk read --level minimal -n <path>`, cutting token usage on common dev
+operations without changing what the agent sees logically.
+
+### Configuration
+
+```toml
+[rtk]
+mode = "auto"  # "auto" (default) | "on" | "off"
+```
+
+- `mode = "auto"` — use rtk if the binary is on PATH; otherwise fall through
+  to the native, uncompressed paths. No startup error.
+- `mode = "on"` — rtk must be installed; startup fails if not.
+- `mode = "off"` — rtk disabled entirely; no PATH probe.
+
+Unknown values clamp to `auto`.
+
+### Per-tool escape hatch
+
+Both tools accept an optional `raw: true` to bypass rtk when exact bytes matter:
+
+```json
+{"command": "git diff HEAD~1", "raw": true}
+{"file_path": "/abs/path/to/file", "raw": true}
+```
+
+`Read` also bypasses rtk automatically when `offset` or `limit` is set, since
+windowed reads need precise line numbering.
+
+### Approval and display
+
+- **Approval policy matches the original command**, not the rewritten form.
+  Allowlists keep working; a rewrite can't sneak past an `Ask` rule.
+- **TUI** shows the original command as the primary line and, when a rewrite
+  occurred, the rewritten form on a dimmed subline prefixed with `↳` so you
+  always see what actually executed.
+- **Cap:** rtk read output is capped at 1 MiB; oversize responses return an
+  error that hints the agent to retry with `raw: true`.
+
+### Installing rtk
+
+rtk is optional; when missing and `mode = "auto"`, SAM just uses native paths.
+See [rtk's repo](https://github.com/rtk-ai/rtk) for install instructions, then
+verify with `rtk --version`.
 
 ## Keybindings
 

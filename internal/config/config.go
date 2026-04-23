@@ -39,6 +39,10 @@ type ModelConfig struct {
 	ReasoningEffort string `toml:"reasoning_effort"`
 }
 
+type RTKConfig struct {
+	Mode string `toml:"mode"` // "auto" (default) | "on" | "off"
+}
+
 type Config struct {
 	Provider         string                   `toml:"provider"`
 	Model            string                   `toml:"model"`
@@ -50,6 +54,7 @@ type Config struct {
 	TUI              struct {
 		Theme string `toml:"theme"`
 	} `toml:"tui"`
+	RTK RTKConfig `toml:"rtk"`
 }
 
 // ModelContextWindow returns the configured context window in tokens,
@@ -103,16 +108,18 @@ type rawConfig struct {
 	TUI              struct {
 		Theme string `toml:"theme"`
 	} `toml:"tui"`
+	RTK RTKConfig `toml:"rtk"`
 }
 
 func Load(over Overrides) (*Config, error) {
 	cfg := &Config{
 		Provider:      "minimax",
 		MaxTokens:     4096,
-		MaxIterations: 25,
+		MaxIterations: 50,
 		Providers:     Presets(),
 	}
 	cfg.TUI.Theme = "dark"
+	cfg.RTK.Mode = "auto"
 
 	path := getConfigPath()
 	if data, err := os.ReadFile(path); err == nil {
@@ -140,6 +147,9 @@ func Load(over Overrides) (*Config, error) {
 		}
 		if raw.TUI.Theme != "" {
 			cfg.TUI.Theme = raw.TUI.Theme
+		}
+		if raw.RTK.Mode != "" {
+			cfg.RTK.Mode = raw.RTK.Mode
 		}
 		// Full-replace merge: any provider key declared in TOML replaces
 		// the preset entry entirely.
@@ -187,6 +197,13 @@ func Load(over Overrides) (*Config, error) {
 	}
 	if _, ok := cfg.Providers[cfg.Provider]; !ok {
 		return nil, fmt.Errorf("unknown provider %q (known: %s)", cfg.Provider, joinProviderNames(cfg.Providers))
+	}
+
+	// Validate RTK mode; clamp unknown values to the default.
+	switch cfg.RTK.Mode {
+	case "auto", "on", "off":
+	default:
+		cfg.RTK.Mode = "auto"
 	}
 	return cfg, nil
 }

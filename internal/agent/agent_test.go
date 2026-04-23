@@ -83,7 +83,7 @@ func TestOneToolTurn(t *testing.T) {
 
 	tracker := tools.NewReadTracker()
 	reg := tools.NewRegistry()
-	reg.Register(tools.NewRead(tracker, "test"))
+	reg.Register(tools.NewRead(tracker, nil, "test"))
 
 	agent := New(Options{
 		Provider: prov,
@@ -207,7 +207,7 @@ func TestMaxIterationsCap(t *testing.T) {
 
 	tracker := tools.NewReadTracker()
 	reg := tools.NewRegistry()
-	reg.Register(tools.NewRead(tracker, "test"))
+	reg.Register(tools.NewRead(tracker, nil, "test"))
 
 	agent := New(Options{
 		Provider: prov,
@@ -304,7 +304,7 @@ func TestMultiTurnReasoningPreservation(t *testing.T) {
 	)
 	tracker := tools.NewReadTracker()
 	reg := tools.NewRegistry()
-	reg.Register(tools.NewRead(tracker, "test"))
+	reg.Register(tools.NewRead(tracker, nil, "test"))
 
 	agent := New(Options{Provider: prov, Tools: reg, Policy: policy.AllowAll()})
 	agent.Start()

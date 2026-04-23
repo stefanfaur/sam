@@ -46,10 +46,11 @@ type ToolCall struct {
 func (ToolCall) isEvent() {}
 
 type ToolResult struct {
-	ID      string
-	Name    string
-	Output  string
-	IsError bool
+	ID        string
+	Name      string
+	Output    string
+	IsError   bool
+	Rewritten string
 }
 
 func (ToolResult) isEvent() {}

@@ -61,7 +61,7 @@ func New(opts Options) *Agent {
 		opts.MaxTokens = 4096
 	}
 	if opts.MaxIters == 0 {
-		opts.MaxIters = 25
+		opts.MaxIters = 50
 	}
 	if opts.LaunchDir == "" {
 		cwd, _ := os.Getwd()
@@ -237,6 +237,16 @@ func (a *Agent) SetModel(m string) {
 	a.mu.Lock()
 	defer a.mu.Unlock()
 	a.model = m
+}
+
+// SetMaxIters updates the per-turn tool iteration cap. Non-positive values are ignored.
+func (a *Agent) SetMaxIters(n int) {
+	if n <= 0 {
+		return
+	}
+	a.mu.Lock()
+	defer a.mu.Unlock()
+	a.maxIters = n
 }
 
 // SetProvider swaps the LLM provider for subsequent turns.

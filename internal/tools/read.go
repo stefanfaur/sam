@@ -16,6 +16,7 @@ type ReadInput struct {
 	FilePath string  `json:"file_path" jsonschema:"required,description=Absolute path to the file to read."`
 	Offset   flexInt `json:"offset,omitempty" jsonschema:"description=1-indexed line number to start from."`
 	Limit    flexInt `json:"limit,omitempty" jsonschema:"description=Max number of lines to return. Default 2000."`
+	Raw      bool    `json:"raw,omitempty" jsonschema:"description=Skip rtk compression; return exact file contents with line numbers. Use for precise editing or when bytes matter."`
 }
 
 const (
@@ -46,13 +47,13 @@ func (r *ReadTracker) Seen(p string) bool {
 	return ok
 }
 
-func NewRead(tracker *ReadTracker, description string) Tool {
+func NewRead(tracker *ReadTracker, rtkClient RTKClient, description string) Tool {
 	return New[ReadInput]("Read", description, func(ctx context.Context, in ReadInput) (Result, error) {
-		return runRead(ctx, in, tracker)
+		return runRead(ctx, in, tracker, rtkClient)
 	})
 }
 
-func runRead(ctx context.Context, in ReadInput, tracker *ReadTracker) (Result, error) {
+func runRead(ctx context.Context, in ReadInput, tracker *ReadTracker, rtkClient RTKClient) (Result, error) {
 	if !filepath.IsAbs(in.FilePath) {
 		return Result{Output: "file_path must be absolute", IsError: true}, nil
 	}
@@ -68,13 +69,13 @@ func runRead(ctx context.Context, in ReadInput, tracker *ReadTracker) (Result, e
 		return Result{Output: "binary file; use Bash with the right tool", IsError: true}, nil
 	}
 
-	// Mark as read
+	// Mark as read (unconditional; preserves Write/Edit gate across both paths).
 	if tracker != nil {
 		tracker.Mark(in.FilePath)
 	}
 
-	_, _ = f.Seek(0, io.SeekStart)
-
+	explicitOffset := int(in.Offset) > 0
+	explicitLimit := int(in.Limit) > 0
 	offset := int(in.Offset)
 	if offset < 1 {
 		offset = 1
@@ -83,6 +84,17 @@ func runRead(ctx context.Context, in ReadInput, tracker *ReadTracker) (Result, e
 	if limit <= 0 {
 		limit = defaultReadLimit
 	}
+
+	// rtk path: only when enabled, not raw, no explicit window.
+	if rtkClient != nil && rtkClient.Enabled() && !in.Raw && !explicitOffset && !explicitLimit {
+		out, err := rtkClient.Read(ctx, in.FilePath)
+		if err != nil {
+			return Result{Output: "rtk read failed: " + err.Error(), IsError: true}, nil
+		}
+		return Result{Output: string(out)}, nil
+	}
+
+	_, _ = f.Seek(0, io.SeekStart)
 
 	var buf strings.Builder
 	sc := bufio.NewScanner(f)
