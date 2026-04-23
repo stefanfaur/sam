@@ -9,6 +9,7 @@ import (
 	"github.com/charmbracelet/huh"
 	"github.com/charmbracelet/lipgloss"
 	"github.com/stefanfaur/sam/internal/config"
+	"github.com/stefanfaur/sam/internal/skills"
 )
 
 // settingsKeyMap binds arrow keys for field-to-field navigation on fields that
@@ -36,6 +37,7 @@ const (
 	tabStatusline settingsTab = iota
 	tabProviders
 	tabTheme
+	tabSkills
 	numTabs
 )
 
@@ -55,35 +57,53 @@ type settingsModal struct {
 	selectedSegments []string
 
 	factory ProviderFactory
+	skills  *skillsWidget
 }
 
-func newSettingsModal(current Settings, curProvider string, factory ProviderFactory) *settingsModal {
+func newSettingsModal(current Settings, curProvider string, factory ProviderFactory, skillReg *skills.Registry) *settingsModal {
 	m := &settingsModal{
 		pending:      current,
 		pendingTheme: NewTheme(current.Theme),
 		provider:     curProvider,
 		factory:      factory,
+		skills:       newSkillsWidget(skillReg),
 	}
 	m.selectedSegments = segmentsStructToSlice(current.Statusbar.Segments)
 	km := settingsKeyMap()
 	m.forms[tabStatusline] = m.buildStatuslineForm().WithKeyMap(km)
 	m.forms[tabProviders] = m.buildProvidersForm().WithKeyMap(km)
 	m.forms[tabTheme] = m.buildThemeForm().WithKeyMap(km)
+	// Skills tab uses a custom widget, not huh. Leave forms[tabSkills] nil.
 	return m
 }
 
-func (m *settingsModal) Init() tea.Cmd { return m.forms[m.active].Init() }
+func (m *settingsModal) Init() tea.Cmd {
+	if f := m.forms[m.active]; f != nil {
+		return f.Init()
+	}
+	return nil
+}
 
 func (m *settingsModal) Update(msg tea.Msg) tea.Cmd {
 	if km, ok := msg.(tea.KeyMsg); ok {
 		switch km.Type {
 		case tea.KeyTab:
 			m.active = (m.active + 1) % numTabs
-			return m.forms[m.active].Init()
+			if f := m.forms[m.active]; f != nil {
+				return f.Init()
+			}
+			return nil
 		case tea.KeyShiftTab:
 			m.active = (m.active - 1 + numTabs) % numTabs
-			return m.forms[m.active].Init()
+			if f := m.forms[m.active]; f != nil {
+				return f.Init()
+			}
+			return nil
 		case tea.KeyEsc:
+			if m.active == tabSkills && m.skills != nil && m.skills.trustPanel {
+				m.skills.trustPanel = false
+				return nil
+			}
 			m.cancelled = true
 			m.done = true
 			return nil
@@ -91,6 +111,13 @@ func (m *settingsModal) Update(msg tea.Msg) tea.Cmd {
 			m.done = true
 			return nil
 		}
+	}
+
+	if m.active == tabSkills && m.skills != nil {
+		if km, ok := msg.(tea.KeyMsg); ok {
+			m.skills.Update(km)
+		}
+		return nil
 	}
 
 	form, cmd := m.forms[m.active].Update(msg)
@@ -104,7 +131,12 @@ func (m *settingsModal) Update(msg tea.Msg) tea.Cmd {
 
 func (m *settingsModal) View() string {
 	tabs := m.renderTabs()
-	body := m.forms[m.active].View()
+	var body string
+	if m.active == tabSkills && m.skills != nil {
+		body = m.skills.View()
+	} else {
+		body = m.forms[m.active].View()
+	}
 	var preview string
 	switch m.active {
 	case tabStatusline:
@@ -141,11 +173,19 @@ func (m *settingsModal) Apply(root *Model) tea.Cmd {
 	root.settings = m.pending
 	root.theme = probeTheme
 	root.theme.Apply(root.width)
+	if m.skills != nil {
+		if err := m.skills.Apply(); err != nil {
+			return root.addInfo("skills save failed: " + err.Error())
+		}
+		if root.agent != nil {
+			root.agent.RebuildSkillCatalog()
+		}
+	}
 	return root.addInfo("settings saved")
 }
 
 func (m *settingsModal) renderTabs() string {
-	labels := []string{"Statusline", "Providers", "Theme"}
+	labels := []string{"Statusline", "Providers", "Theme", "Skills"}
 	var sb strings.Builder
 	for i, l := range labels {
 		style := lipgloss.NewStyle().Padding(0, 1)

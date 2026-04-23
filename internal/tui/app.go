@@ -8,6 +8,7 @@ import (
 	"github.com/charmbracelet/lipgloss"
 	"github.com/stefanfaur/sam/internal/agent"
 	"github.com/stefanfaur/sam/internal/logging"
+	"github.com/stefanfaur/sam/internal/skills"
 )
 
 type Event = agent.Event
@@ -18,6 +19,18 @@ type pendingTurn struct {
 	committed int
 	thinkRaw  []rune
 	done      bool
+	skill     *skillCardState
+}
+
+// skillCardState drives the live animated skill-invocation card and carries
+// the info needed to flush a final static card to scrollback on turn end.
+type skillCardState struct {
+	Header    string
+	Body      string
+	Source    string
+	Index     int
+	StartedAt time.Time
+	Flushed   bool
 }
 
 type Model struct {
@@ -38,9 +51,37 @@ type Model struct {
 	ring      *logging.Ring
 	factory   ProviderFactory
 	ctxWinFn  func(model string) int
-	suggest   suggestState
-	lastCtrlC time.Time
-	scanner   *blockScanner
+	suggest       suggestState
+	lastCtrlC     time.Time
+	scanner       *blockScanner
+	skills        *skills.Registry
+	recentInvokes []skillInvocation
+}
+
+// skillInvocation is a TUI-side record of a slash-invoked skill so its body
+// can be re-surfaced via /show-skill after the collapsed header prints.
+type skillInvocation struct {
+	Header string
+	Body   string
+	Source string
+}
+
+const maxRecentInvokes = 32
+
+// recordInvoke pushes an invocation onto the bounded ring buffer.
+func (m *Model) recordInvoke(inv skillInvocation) {
+	m.recentInvokes = append(m.recentInvokes, inv)
+	if len(m.recentInvokes) > maxRecentInvokes {
+		m.recentInvokes = m.recentInvokes[len(m.recentInvokes)-maxRecentInvokes:]
+	}
+}
+
+// SetSkills attaches the skills registry to the model. Called during boot.
+func (m *Model) SetSkills(r *skills.Registry) {
+	m.skills = r
+	if tp := newTrustPromptModal(r); tp != nil {
+		m.modal = tp
+	}
 }
 
 type suggestState struct {
@@ -88,7 +129,7 @@ func New(a *agent.Agent, ring *logging.Ring, opts Options) *Model {
 	theme := NewTheme(settings.Theme)
 
 	ta := textarea.New()
-	ta.Placeholder = "Ask SAM anything, or type /help"
+	ta.Placeholder = ""
 	ta.Prompt = "❯ "
 	ta.ShowLineNumbers = false
 	ta.CharLimit = 0

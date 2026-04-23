@@ -2,6 +2,7 @@ package tui
 
 import (
 	"context"
+	"fmt"
 	"strings"
 	"time"
 
@@ -9,6 +10,7 @@ import (
 	tea "github.com/charmbracelet/bubbletea"
 	"github.com/charmbracelet/lipgloss"
 	"github.com/stefanfaur/sam/internal/agent"
+	"github.com/stefanfaur/sam/internal/skills"
 )
 
 const (
@@ -122,16 +124,24 @@ func (m *Model) View() string {
 	// room against the last flushed assistant line in scrollback.
 	parts := []string{""}
 
-	// Live tail (uncommitted assistant text).
-	if m.pending != nil && m.pending.committed < len(m.pending.raw) {
-		tail := string(m.pending.raw[m.pending.committed:])
-		parts = append(parts, tail)
+	// Animated skill invocation card (shown while a slash-invoked skill's
+	// turn is still running).
+	if m.pending != nil && m.pending.skill != nil && !m.pending.skill.Flushed {
+		elapsed := time.Since(m.pending.skill.StartedAt)
+		parts = append(parts, renderSkillCard(m.theme, m.pending.skill, elapsed, m.spinner.frame, true))
 	}
 
-	// Thinking card.
+	// Thinking card first — it streams before the response, so chronological
+	// order puts it above the live tail.
 	if m.pending != nil && len(m.pending.thinkRaw) > 0 {
 		card := renderThinkingCard(m.theme, string(m.pending.thinkRaw), true)
 		parts = append(parts, card)
+	}
+
+	// Live tail (uncommitted assistant text) — the actual response.
+	if m.pending != nil && m.pending.committed < len(m.pending.raw) {
+		tail := string(m.pending.raw[m.pending.committed:])
+		parts = append(parts, tail)
 	}
 
 	bottom := m.renderInputBox()
@@ -285,8 +295,13 @@ func (m *Model) refreshSuggestions() {
 		return
 	}
 	var matches []string
-	for _, s := range commandSuggestions {
-		if strings.HasPrefix(s.Name, v) {
+	for _, s := range suggestionsFor(m.skills) {
+		// Compare against the slash portion only (ignore " <argument-hint>").
+		slash := s.Name
+		if i := strings.IndexByte(slash, ' '); i > 0 {
+			slash = slash[:i]
+		}
+		if strings.HasPrefix(slash, v) {
 			matches = append(matches, s.Name+"  "+s.Help)
 		}
 	}
@@ -321,8 +336,8 @@ func (m *Model) renderSuggestions() string {
 }
 
 func (m *Model) startTurn(text string) (tea.Model, tea.Cmd) {
-	if cmd, arg := parseCommand(text); cmd != CmdNone {
-		return m.dispatchCommand(cmd, arg)
+	if cmd, arg, sk := parseCommand(text, m.skills); cmd != CmdNone {
+		return m.dispatchCommand(cmd, arg, sk)
 	}
 
 	userMsg := m.renderUserMsg(text)
@@ -348,7 +363,7 @@ func (m *Model) startTurn(text string) (tea.Model, tea.Cmd) {
 	)
 }
 
-func (m *Model) dispatchCommand(cmd Command, arg string) (tea.Model, tea.Cmd) {
+func (m *Model) dispatchCommand(cmd Command, arg string, sk *skills.Skill) (tea.Model, tea.Cmd) {
 	switch cmd {
 	case CmdQuit:
 		return m, tea.Quit
@@ -389,7 +404,7 @@ func (m *Model) dispatchCommand(cmd Command, arg string) (tea.Model, tea.Cmd) {
 	case CmdSettings:
 		m.input.Reset()
 		m.suggest.active = false
-		m.modal = newSettingsModal(m.settings, m.status.provider, m.factory)
+		m.modal = newSettingsModal(m.settings, m.status.provider, m.factory, m.skills)
 		m.input.Blur()
 		return m, m.modal.Init()
 
@@ -401,7 +416,22 @@ func (m *Model) dispatchCommand(cmd Command, arg string) (tea.Model, tea.Cmd) {
 	case CmdHelp:
 		m.input.Reset()
 		m.suggest.active = false
-		return m, m.addInfo(helpText)
+		return m, m.addInfo(helpTextFor(m.skills))
+
+	case CmdSkill:
+		m.input.Reset()
+		m.suggest.active = false
+		return m.startSkillTurn(sk, arg)
+
+	case CmdReloadSkills:
+		m.input.Reset()
+		m.suggest.active = false
+		return m, m.reloadSkills()
+
+	case CmdShowSkill:
+		m.input.Reset()
+		m.suggest.active = false
+		return m, m.showSkill(arg)
 
 	case CmdUnknown:
 		m.input.Reset()
@@ -439,6 +469,21 @@ func (m *Model) handleAgentEvent(msg agentEventMsg) (tea.Model, tea.Cmd) {
 		return m, nil
 	}
 	switch ev := msg.Ev.(type) {
+	case agent.SkillInvoked:
+		// Record body so /show-skill can expand later; drive the animated
+		// card from pending.skill while the turn runs. Card flushes to
+		// scrollback on TurnDone.
+		m.recordInvoke(skillInvocation{Header: ev.Header, Body: ev.Body, Source: ev.Source})
+		idx := len(m.recentInvokes) - 1
+		m.pending.skill = &skillCardState{
+			Header:    ev.Header,
+			Body:      ev.Body,
+			Source:    ev.Source,
+			Index:     idx,
+			StartedAt: time.Now(),
+		}
+		return m, waitAgent(m.pending.events)
+
 	case agent.MessageStart:
 		return m, waitAgent(m.pending.events)
 
@@ -522,6 +567,13 @@ func (m *Model) handleAgentEvent(msg agentEventMsg) (tea.Model, tea.Cmd) {
 
 	case agent.TurnDone:
 		m.pending.done = true
+		var cardCmd tea.Cmd
+		if m.pending.skill != nil && !m.pending.skill.Flushed {
+			m.pending.skill.Flushed = true
+			elapsed := time.Since(m.pending.skill.StartedAt)
+			card := renderSkillCard(m.theme, m.pending.skill, elapsed, m.spinner.frame, false)
+			cardCmd = tea.Printf("%s", card)
+		}
 		var flush tea.Cmd
 		if m.pending.committed < len(m.pending.raw) {
 			tail := m.pending.raw[m.pending.committed:]
@@ -535,6 +587,9 @@ func (m *Model) handleAgentEvent(msg agentEventMsg) (tea.Model, tea.Cmd) {
 		m.spinner.on = false
 		m.input.Focus()
 		cmds := []tea.Cmd{}
+		if cardCmd != nil {
+			cmds = append(cmds, cardCmd)
+		}
 		if flush != nil {
 			cmds = append(cmds, flush)
 		}
@@ -543,6 +598,99 @@ func (m *Model) handleAgentEvent(msg agentEventMsg) (tea.Model, tea.Cmd) {
 	}
 
 	return m, waitAgent(m.pending.events)
+}
+
+// startSkillTurn kicks off a turn whose user message is a rendered skill body.
+// The agent emits SkillInvoked first so the TUI can paint the collapsed header.
+func (m *Model) startSkillTurn(sk *skills.Skill, args string) (tea.Model, tea.Cmd) {
+	if sk == nil {
+		return m, m.addInfo("skill not found")
+	}
+	m.status.state = "thinking"
+	m.status.iter = 0
+	m.status.turnIn = 0
+	m.status.turnOut = 0
+	m.status.turnCacheRead = 0
+	m.turnStart = time.Now()
+	m.spinner.on = m.settings.Statusbar.Spinner
+	m.input.Blur()
+
+	name := sk.Name
+	if sk.Shadowed {
+		name = sk.RootLabel + ":" + sk.Name
+	}
+	events, err := m.agent.SubmitSkill(context.Background(), name, args)
+	if err != nil {
+		m.status.state = "idle"
+		m.spinner.on = false
+		m.input.Focus()
+		return m, m.addInfo(fmt.Sprintf("skill error: %v", err))
+	}
+	m.pending = &pendingTurn{events: events}
+	m.scanner = &blockScanner{}
+	return m, tea.Batch(
+		waitAgent(events),
+		tea.Tick(spinnerTickInterval, func(time.Time) tea.Msg { return spinnerTickMsg{} }),
+	)
+}
+
+// showSkill prints the body of a previously-invoked skill. arg is the 0-based
+// index into recentInvokes (empty = latest). Negative or out-of-range indices
+// yield an error toast.
+func (m *Model) showSkill(arg string) tea.Cmd {
+	if len(m.recentInvokes) == 0 {
+		return m.addInfo("no skill invocations yet")
+	}
+	idx := len(m.recentInvokes) - 1
+	if arg != "" {
+		n, err := parseNonNegInt(arg)
+		if err != nil {
+			return m.addInfo("show-skill: bad index: " + arg)
+		}
+		if n >= len(m.recentInvokes) {
+			return m.addInfo(fmt.Sprintf("show-skill: index %d out of range (have %d)", n, len(m.recentInvokes)))
+		}
+		idx = n
+	}
+	inv := m.recentInvokes[idx]
+	header := m.theme.UserMsg.Render(fmt.Sprintf("▼ %s  (%s)  [index %d]", inv.Header, inv.Source, idx))
+	body := safeGlamourRender(m.theme.Glamour(), inv.Body)
+	return tea.Printf("%s\n%s", header, body)
+}
+
+func parseNonNegInt(s string) (int, error) {
+	n := 0
+	for _, r := range s {
+		if r < '0' || r > '9' {
+			return 0, fmt.Errorf("not a number: %q", s)
+		}
+		n = n*10 + int(r-'0')
+	}
+	return n, nil
+}
+
+func (m *Model) reloadSkills() tea.Cmd {
+	if m.skills == nil {
+		return m.addInfo("skills: registry not configured")
+	}
+	if err := m.skills.Reload(); err != nil {
+		return m.addInfo("skills reload failed: " + err.Error())
+	}
+	m.agent.RebuildSkillCatalog()
+	var enabled, shadowed, errors int
+	for _, sk := range m.skills.List() {
+		if sk.LoadError != nil {
+			errors++
+			continue
+		}
+		if sk.Shadowed {
+			shadowed++
+		}
+		if sk.Enabled {
+			enabled++
+		}
+	}
+	return m.addInfo(fmt.Sprintf("skills reloaded: %d enabled, %d shadowed, %d errors", enabled, shadowed, errors))
 }
 
 func renderThinkingCard(t *Theme, text string, streaming bool) string {

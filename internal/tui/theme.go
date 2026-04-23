@@ -31,6 +31,10 @@ type Theme struct {
 	DebugPanel      lipgloss.Style
 	Thinking        lipgloss.Style
 	ThinkingHeader  lipgloss.Style
+	SkillCard       lipgloss.Style
+	SkillCardHeader lipgloss.Style
+	SkillCardMeta   lipgloss.Style
+	SkillCardHint   lipgloss.Style
 	Suggest         lipgloss.Style
 	SuggestSelected lipgloss.Style
 
@@ -64,7 +68,7 @@ func (t *Theme) Apply(width int) {
 		BorderForeground(t.UserBorder).
 		Padding(0, 1).MarginTop(1).Bold(true)
 
-	t.ToolHeader = lipgloss.NewStyle().Foreground(t.Muted)
+	t.ToolHeader = lipgloss.NewStyle().Foreground(t.Accent).Bold(true)
 	t.ToolInput = lipgloss.NewStyle().Foreground(t.Muted).Italic(true)
 	t.ToolResult = lipgloss.NewStyle().Foreground(t.Muted)
 	t.ToolError = lipgloss.NewStyle().Foreground(t.ErrorFg)
@@ -80,7 +84,14 @@ func (t *Theme) Apply(width int) {
 		Foreground(t.Muted).Italic(true).
 		Border(lipgloss.NormalBorder(), false, false, false, true).
 		BorderForeground(lipgloss.Color("238")).Padding(0, 1)
-	t.ThinkingHeader = lipgloss.NewStyle().Foreground(t.Muted).Bold(true).Italic(true)
+	t.ThinkingHeader = lipgloss.NewStyle().Foreground(t.Accent).Bold(true).Italic(true)
+	t.SkillCard = lipgloss.NewStyle().
+		Border(lipgloss.RoundedBorder()).
+		BorderForeground(t.Accent).
+		Padding(0, 1).MarginTop(1)
+	t.SkillCardHeader = lipgloss.NewStyle().Foreground(t.Accent).Bold(true)
+	t.SkillCardMeta = lipgloss.NewStyle().Foreground(t.Muted)
+	t.SkillCardHint = lipgloss.NewStyle().Foreground(t.Muted).Italic(true)
 	t.Suggest = lipgloss.NewStyle().Foreground(t.Muted)
 	t.SuggestSelected = lipgloss.NewStyle().
 		Foreground(lipgloss.Color("252")).Background(lipgloss.Color("238")).Bold(true)

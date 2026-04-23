@@ -3,7 +3,11 @@ package tui
 import (
 	"os"
 	"path/filepath"
+	"strings"
 	"testing"
+
+	tea "github.com/charmbracelet/bubbletea"
+	"github.com/stefanfaur/sam/internal/skills"
 )
 
 func newApplyRoot(t *testing.T) *Model {
@@ -25,7 +29,7 @@ func TestSettingsModalApplyCancelled(t *testing.T) {
 	t.Setenv("XDG_CONFIG_HOME", t.TempDir())
 	root := newApplyRoot(t)
 	original := root.settings
-	mm := newSettingsModal(root.settings, "anthropic", nil)
+	mm := newSettingsModal(root.settings, "anthropic", nil, nil)
 	mm.cancelled = true
 	cmd := mm.Apply(root)
 	if cmd == nil {
@@ -44,7 +48,7 @@ func TestSettingsModalApplyPersists(t *testing.T) {
 	dir := t.TempDir()
 	t.Setenv("XDG_CONFIG_HOME", dir)
 	root := newApplyRoot(t)
-	mm := newSettingsModal(root.settings, "anthropic", nil)
+	mm := newSettingsModal(root.settings, "anthropic", nil, nil)
 	mm.pending.Statusbar.Layout = "one-line"
 	mm.pending.Theme.Accent = "#abcdef"
 	cmd := mm.Apply(root)
@@ -63,10 +67,41 @@ func TestSettingsModalApplyPersists(t *testing.T) {
 	}
 }
 
+func TestSettingsModalTabNavReachesSkills(t *testing.T) {
+	t.Setenv("XDG_CONFIG_HOME", t.TempDir())
+	root := t.TempDir()
+	mkSkill(t, root, "sample")
+	reg := skills.NewRegistry(
+		[]skills.RootSpec{{Path: root, Label: "personal", Source: skills.SourcePersonal}},
+		skills.Overrides{}, skills.TrustList{}, BuiltinNames, nil,
+	)
+	reg.Load()
+	mm := newSettingsModal(DefaultSettings(), "anthropic", nil, reg)
+	if mm.active != tabStatusline {
+		t.Fatalf("initial tab = %v, want tabStatusline", mm.active)
+	}
+	// Tab tabStatusline → tabProviders → tabTheme → tabSkills.
+	for i := 0; i < 3; i++ {
+		mm.Update(tea.KeyMsg{Type: tea.KeyTab})
+	}
+	if mm.active != tabSkills {
+		t.Fatalf("after 3x Tab, active = %v, want tabSkills", mm.active)
+	}
+	view := mm.View()
+	if !strings.Contains(view, "sample") {
+		t.Errorf("Skills tab view missing fixture skill: %s", view)
+	}
+	// Shift+Tab returns to tabTheme.
+	mm.Update(tea.KeyMsg{Type: tea.KeyShiftTab})
+	if mm.active != tabTheme {
+		t.Errorf("after Shift+Tab from Skills, active = %v", mm.active)
+	}
+}
+
 func TestSettingsModalApplyFallsBackOnBadGlamour(t *testing.T) {
 	t.Setenv("XDG_CONFIG_HOME", t.TempDir())
 	root := newApplyRoot(t)
-	mm := newSettingsModal(root.settings, "anthropic", nil)
+	mm := newSettingsModal(root.settings, "anthropic", nil, nil)
 	// Unknown glamour style — NewTheme falls back to renderer-less glam if the
 	// SDK rejects the style. Apply's guard only kicks in when Glamour() is nil.
 	mm.pending.Theme.GlamourStyle = "nonexistent-style-xyz"
