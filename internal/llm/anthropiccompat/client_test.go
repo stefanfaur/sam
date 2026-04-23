@@ -62,7 +62,7 @@ func TestBuildToolsEmptyRequiredWhenAbsent(t *testing.T) {
 	}
 }
 
-func TestBuildMessagesDropsContentThinking(t *testing.T) {
+func TestBuildMessagesDropsUnsignedThinking(t *testing.T) {
 	msgs := []llm.Message{{
 		Role: llm.RoleAssistant,
 		Content: []llm.ContentBlock{
@@ -74,7 +74,29 @@ func TestBuildMessagesDropsContentThinking(t *testing.T) {
 	raw, _ := json.Marshal(out)
 	s := string(raw)
 	if contains(s, "private chain-of-thought") {
-		t.Errorf("thinking leaked into wire: %s", s)
+		t.Errorf("unsigned thinking leaked into wire: %s", s)
+	}
+	if !contains(s, "answer") {
+		t.Errorf("text missing: %s", s)
+	}
+}
+
+func TestBuildMessagesRoundTripsSignedThinking(t *testing.T) {
+	msgs := []llm.Message{{
+		Role: llm.RoleAssistant,
+		Content: []llm.ContentBlock{
+			{Type: llm.ContentThinking, Text: "signed reasoning", Signature: "sig-abc-123"},
+			{Type: llm.ContentText, Text: "answer"},
+		},
+	}}
+	out := BuildMessages(msgs)
+	raw, _ := json.Marshal(out)
+	s := string(raw)
+	if !contains(s, "signed reasoning") {
+		t.Errorf("signed thinking not round-tripped: %s", s)
+	}
+	if !contains(s, "sig-abc-123") {
+		t.Errorf("signature not round-tripped: %s", s)
 	}
 	if !contains(s, "answer") {
 		t.Errorf("text missing: %s", s)

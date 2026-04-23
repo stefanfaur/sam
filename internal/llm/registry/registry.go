@@ -10,10 +10,10 @@ import (
 )
 
 // Build routes a provider entry to its wire-specific constructor.
-func Build(entry config.ProviderEntry, model string, effortResolver func(string) string) (llm.Provider, error) {
+func Build(entry config.ProviderEntry, model string, effortResolver func(string) string, thinkingResolver func(string) int) (llm.Provider, error) {
 	switch entry.Wire {
 	case "anthropic":
-		return anthropiccompat.NewProvider(entry, model)
+		return anthropiccompat.NewProvider(entry, model, thinkingResolver)
 	case "openai":
 		return openaicompat.NewProvider(entry, model, effortResolver)
 	default:

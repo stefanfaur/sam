@@ -98,6 +98,11 @@ func (a *Agent) consumeStream(ctx context.Context, req llm.Request, out chan Eve
 				})
 			}
 
+		case llm.EventThinkingStop:
+			if n := len(msg.Content); n > 0 && msg.Content[n-1].Type == llm.ContentThinking {
+				msg.Content[n-1].Signature = ev.Signature
+			}
+
 		case llm.EventTextDelta:
 			emitToChan(out, TextDelta{Text: ev.Text}, reqCtx)
 			if n := len(msg.Content); n > 0 && msg.Content[n-1].Type == llm.ContentText {

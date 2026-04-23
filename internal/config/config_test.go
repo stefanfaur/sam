@@ -206,6 +206,37 @@ reasoning_effort = "high"
 	}
 }
 
+func TestModelThinkingBudgetDefaults(t *testing.T) {
+	cfg := &Config{}
+	cases := map[string]int{
+		"MiniMax-M2.7":             32_000,
+		"MiniMax-M1":               32_000,
+		"claude-sonnet-4-5":        0,
+		"trinity-large-thinking":   0,
+		"gpt-4o":                   0,
+	}
+	for model, want := range cases {
+		if got := cfg.ModelThinkingBudget(model); got != want {
+			t.Errorf("%s: got %d want %d", model, got, want)
+		}
+	}
+}
+
+func TestModelThinkingBudgetExplicitOverride(t *testing.T) {
+	zero := 0
+	eightK := 8_000
+	cfg := &Config{Models: map[string]ModelConfig{
+		"MiniMax-M2.7": {ThinkingBudgetTokens: &zero},
+		"claude-sonnet-4-5": {ThinkingBudgetTokens: &eightK},
+	}}
+	if got := cfg.ModelThinkingBudget("MiniMax-M2.7"); got != 0 {
+		t.Errorf("explicit 0 should disable: got %d", got)
+	}
+	if got := cfg.ModelThinkingBudget("claude-sonnet-4-5"); got != 8_000 {
+		t.Errorf("explicit 8k: got %d", got)
+	}
+}
+
 func TestContextWindowPrefixRules(t *testing.T) {
 	cfg := &Config{}
 	cases := map[string]int{

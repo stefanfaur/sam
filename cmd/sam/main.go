@@ -95,7 +95,8 @@ func buildProvider(cfg *config.Config, name, model string) (llm.Provider, error)
 		model = entry.DefaultModel
 	}
 	resolver := func(m string) string { return cfg.Models[m].ReasoningEffort }
-	return registry.Build(entry, model, resolver)
+	thinkingResolver := func(m string) int { return cfg.ModelThinkingBudget(m) }
+	return registry.Build(entry, model, resolver, thinkingResolver)
 }
 
 func buildRegistry(cwd, sysDir string, rtkClient *rtk.Client) (*tools.Registry, *tools.ReadTracker) {

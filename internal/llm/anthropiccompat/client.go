@@ -16,8 +16,9 @@ import (
 var Debug = os.Getenv("SAM_DEBUG") == "1"
 
 // BuildMessages projects cross-provider history into Anthropic SDK param
-// messages. ContentThinking blocks drop silently pre-wire — Anthropic's
-// extended-thinking requires signed thinking blocks we do not carry today.
+// messages. ContentThinking blocks with a signature are round-tripped via
+// NewThinkingBlock (required for extended-thinking continuations on
+// tool-use turns). Unsigned thinking drops silently.
 func BuildMessages(in []llm.Message) []anthropic.MessageParam {
 	out := make([]anthropic.MessageParam, 0, len(in))
 	for _, msg := range in {
@@ -27,7 +28,10 @@ func BuildMessages(in []llm.Message) []anthropic.MessageParam {
 			case llm.ContentText:
 				blocks = append(blocks, anthropic.NewTextBlock(block.Text))
 			case llm.ContentThinking:
-				continue
+				if block.Signature == "" {
+					continue
+				}
+				blocks = append(blocks, anthropic.NewThinkingBlock(block.Signature, block.Text))
 			case llm.ContentToolUse:
 				var input map[string]any
 				if len(block.Input) > 0 {
@@ -135,6 +139,9 @@ func (c *Client) Stream(ctx context.Context, req llm.Request) (<-chan llm.Stream
 	if req.System != "" {
 		params.System = []anthropic.TextBlockParam{{Text: req.System}}
 	}
+	if req.ThinkingBudgetTokens > 0 {
+		params.Thinking = anthropic.ThinkingConfigParamOfEnabled(int64(req.ThinkingBudgetTokens))
+	}
 
 	stream := client.Messages.NewStreaming(ctx, params)
 	// Check for immediate error (e.g., invalid params before HTTP call)
@@ -155,6 +162,10 @@ func readStream(stream *ssestream.Stream[anthropic.MessageStreamEventUnion], out
 		json     strings.Builder
 		active   bool
 	}
+	var currentThinking struct {
+		active    bool
+		signature string
+	}
 
 	for stream.Next() {
 		event := stream.Current()
@@ -171,7 +182,8 @@ func readStream(stream *ssestream.Stream[anthropic.MessageStreamEventUnion], out
 
 		case anthropic.ContentBlockStartEvent:
 			cb := e.ContentBlock
-			if cb.Type == "tool_use" {
+			switch cb.Type {
+			case "tool_use":
 				currentTool.id = cb.ID
 				currentTool.name = cb.Name
 				currentTool.json.Reset()
@@ -181,23 +193,30 @@ func readStream(stream *ssestream.Stream[anthropic.MessageStreamEventUnion], out
 					ToolUseID: currentTool.id,
 					ToolName:  currentTool.name,
 				}
-			} else if cb.Type == "text" {
+			case "thinking":
+				currentThinking.active = true
+				currentThinking.signature = cb.Signature
+			case "text":
 				out <- llm.StreamEvent{Type: llm.EventContentBlockStart}
 			}
 
 		case anthropic.ContentBlockDeltaEvent:
-			switch {
-			case e.Delta.Type == "text_delta":
+			switch e.Delta.Type {
+			case "text_delta":
 				out <- llm.StreamEvent{
 					Type: llm.EventTextDelta,
 					Text: e.Delta.Text,
 				}
-			case e.Delta.Type == "thinking_delta":
+			case "thinking_delta":
 				out <- llm.StreamEvent{
 					Type: llm.EventThinkingDelta,
 					Text: e.Delta.Thinking,
 				}
-			case e.Delta.Type == "input_json_delta":
+			case "signature_delta":
+				if currentThinking.active && e.Delta.Signature != "" {
+					currentThinking.signature = e.Delta.Signature
+				}
+			case "input_json_delta":
 				if currentTool.active {
 					out <- llm.StreamEvent{
 						Type:        llm.EventToolUseDelta,
@@ -211,6 +230,14 @@ func readStream(stream *ssestream.Stream[anthropic.MessageStreamEventUnion], out
 			if currentTool.active {
 				out <- llm.StreamEvent{Type: llm.EventToolUseStop}
 				currentTool.active = false
+			}
+			if currentThinking.active {
+				out <- llm.StreamEvent{
+					Type:      llm.EventThinkingStop,
+					Signature: currentThinking.signature,
+				}
+				currentThinking.active = false
+				currentThinking.signature = ""
 			}
 
 		case anthropic.MessageDeltaEvent:

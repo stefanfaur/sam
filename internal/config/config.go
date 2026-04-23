@@ -35,8 +35,9 @@ type ProviderEntry struct {
 }
 
 type ModelConfig struct {
-	ContextWindow   int    `toml:"context_window"`
-	ReasoningEffort string `toml:"reasoning_effort"`
+	ContextWindow        int    `toml:"context_window"`
+	ReasoningEffort      string `toml:"reasoning_effort"`
+	ThinkingBudgetTokens *int   `toml:"thinking_budget_tokens"`
 }
 
 type RTKConfig struct {
@@ -86,6 +87,20 @@ func (c *Config) ModelContextWindow(name string) int {
 		return 512_000
 	}
 	return 128_000
+}
+
+// ModelThinkingBudget returns the effective extended-thinking budget for a
+// model. Explicit per-model config wins; otherwise family defaults apply.
+// Returns 0 when thinking is off / unsupported.
+func (c *Config) ModelThinkingBudget(name string) int {
+	if m, ok := c.Models[name]; ok && m.ThinkingBudgetTokens != nil {
+		return *m.ThinkingBudgetTokens
+	}
+	switch {
+	case strings.HasPrefix(name, "MiniMax-"):
+		return 32_000
+	}
+	return 0
 }
 
 // Overrides are CLI flag values that take precedence over the TOML file.

@@ -21,6 +21,7 @@ const (
 type ContentBlock struct {
 	Type      ContentType     `json:"type"`
 	Text      string          `json:"text,omitempty"`
+	Signature string          `json:"signature,omitempty"`
 	ToolUseID string          `json:"tool_use_id,omitempty"`
 	ToolName  string          `json:"tool_name,omitempty"`
 	Input     json.RawMessage `json:"input,omitempty"`
@@ -40,11 +41,12 @@ type ToolDef struct {
 }
 
 type Request struct {
-	Model     string
-	System    string
-	Messages  []Message
-	Tools     []ToolDef
-	MaxTokens int
+	Model                string
+	System               string
+	Messages             []Message
+	Tools                []ToolDef
+	MaxTokens            int
+	ThinkingBudgetTokens int
 }
 
 type StreamEventType string
@@ -54,6 +56,7 @@ const (
 	EventContentBlockStart StreamEventType = "content_block_start"
 	EventTextDelta         StreamEventType = "text_delta"
 	EventThinkingDelta     StreamEventType = "thinking_delta"
+	EventThinkingStop      StreamEventType = "thinking_stop"
 	EventToolUseStart      StreamEventType = "tool_use_start"
 	EventToolUseDelta      StreamEventType = "tool_use_delta"
 	EventToolUseStop       StreamEventType = "tool_use_stop"
@@ -64,6 +67,7 @@ const (
 type StreamEvent struct {
 	Type               StreamEventType
 	Text               string
+	Signature          string
 	ToolUseID          string
 	ToolName           string
 	PartialJSON        string
