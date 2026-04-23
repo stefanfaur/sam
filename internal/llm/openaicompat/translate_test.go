@@ -101,8 +101,13 @@ func TestAssistantThinkingPlusToolUseNoTextContentOmitted(t *testing.T) {
 	if m.Content != nil {
 		t.Errorf("content should be nil, got %q", *m.Content)
 	}
-	if m.Reasoning != "must call tool" {
-		t.Errorf("reasoning: %q", m.Reasoning)
+	// Trinity's ReasoningSource is "reasoning_content" → the outbound field
+	// routes there (not into the bare "reasoning" field).
+	if m.ReasoningContent != "must call tool" {
+		t.Errorf("reasoning_content: %q", m.ReasoningContent)
+	}
+	if m.Reasoning != "" {
+		t.Errorf("reasoning should be empty when source is reasoning_content, got %q", m.Reasoning)
 	}
 	// Verify the JSON has no "content" key at all.
 	raw := mustMarshal(t, m)
@@ -124,8 +129,36 @@ func TestAssistantThinkingDroppedWhenEchoOff(t *testing.T) {
 	if len(got) != 1 {
 		t.Fatalf("got %d", len(got))
 	}
-	if got[0].Reasoning != "" {
-		t.Errorf("reasoning should be dropped: %q", got[0].Reasoning)
+	if got[0].Reasoning != "" || got[0].ReasoningContent != "" {
+		t.Errorf("reasoning should be dropped: r=%q rc=%q", got[0].Reasoning, got[0].ReasoningContent)
+	}
+}
+
+func TestAssistantThinkingRoutesByReasoningSource(t *testing.T) {
+	mk := func(model string) chatMessage {
+		caps := DefaultCaps(model)
+		msgs := []llm.Message{{
+			Role: llm.RoleAssistant,
+			Content: []llm.ContentBlock{
+				{Type: llm.ContentThinking, Text: "think"},
+				{Type: llm.ContentText, Text: "hi"},
+			},
+		}}
+		got := toWireMessages("", msgs, caps)
+		if len(got) != 1 {
+			t.Fatalf("got %d", len(got))
+		}
+		return got[0]
+	}
+	// kimi-k2 uses reasoning_content on the wire.
+	k := mk("kimi-k2.6")
+	if k.ReasoningContent != "think" || k.Reasoning != "" {
+		t.Errorf("kimi routing: r=%q rc=%q", k.Reasoning, k.ReasoningContent)
+	}
+	// deepseek-r also uses reasoning_content.
+	d := mk("deepseek-r1")
+	if d.ReasoningContent != "think" || d.Reasoning != "" {
+		t.Errorf("deepseek routing: r=%q rc=%q", d.Reasoning, d.ReasoningContent)
 	}
 }
 

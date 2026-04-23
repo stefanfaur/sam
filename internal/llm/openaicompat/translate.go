@@ -98,12 +98,19 @@ func translateAssistantMessage(msg llm.Message, caps Capabilities) (chatMessage,
 		out.Content = strPtr(text.String())
 	}
 	if thinking.Len() > 0 {
-		out.Reasoning = thinking.String()
+		// Some servers (Moonshot, DeepSeek) validate the field name matches
+		// the stream's ReasoningSource; others accept either. Route by caps.
+		switch caps.ReasoningSource {
+		case "reasoning_content", "both":
+			out.ReasoningContent = thinking.String()
+		default:
+			out.Reasoning = thinking.String()
+		}
 	}
 	if len(toolCalls) > 0 {
 		out.ToolCalls = toolCalls
 	}
-	if out.Content == nil && out.Reasoning == "" && len(out.ToolCalls) == 0 {
+	if out.Content == nil && out.Reasoning == "" && out.ReasoningContent == "" && len(out.ToolCalls) == 0 {
 		return chatMessage{}, false
 	}
 	return out, true

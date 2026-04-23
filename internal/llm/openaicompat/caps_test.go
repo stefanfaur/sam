@@ -23,6 +23,8 @@ func TestDefaultCapsPrefixMatch(t *testing.T) {
 		"gpt-4.1":                {"system", "max_tokens", false, "none", false},
 		"deepseek-r1":            {"system", "max_tokens", false, "reasoning_content", true},
 		"trinity-large-thinking": {"system", "max_tokens", false, "reasoning_content", true},
+		"kimi-k2.6":              {"system", "max_tokens", true, "reasoning_content", true},
+		"kimi-k2.5":              {"system", "max_tokens", true, "reasoning_content", true},
 		"llama-3.3-70b":          {"system", "max_tokens", false, "none", false},
 	}
 	for model, want := range cases {

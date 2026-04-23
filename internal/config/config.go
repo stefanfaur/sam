@@ -85,8 +85,20 @@ func (c *Config) ModelContextWindow(name string) int {
 		return 131_072
 	case strings.HasPrefix(name, "trinity-"):
 		return 512_000
+	case strings.HasPrefix(name, "kimi-k2"):
+		return 262_144
 	}
 	return 128_000
+}
+
+// DefaultReasoningEffort returns a built-in reasoning_effort default for
+// model families that benefit from a preset. User-config values in
+// Config.Models always override this — callers consult the map first.
+func DefaultReasoningEffort(model string) string {
+	if strings.HasPrefix(model, "kimi-k2") {
+		return "high"
+	}
+	return ""
 }
 
 // ModelThinkingBudget returns the effective extended-thinking budget for a

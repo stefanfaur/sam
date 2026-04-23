@@ -24,10 +24,15 @@ func TestLoadDefaults(t *testing.T) {
 	if cfg.MaxTokens != 4096 {
 		t.Fatalf("max_tokens: %d", cfg.MaxTokens)
 	}
-	for _, name := range []string{"minimax", "anthropic", "openai", "arcee"} {
+	for _, name := range []string{"minimax", "anthropic", "openai", "arcee", "moonshot"} {
 		if _, ok := cfg.Providers[name]; !ok {
 			t.Errorf("preset %q missing", name)
 		}
+	}
+	moon := cfg.Providers["moonshot"]
+	if moon.Wire != "openai" || moon.BaseURL != "https://api.moonshot.ai/v1" ||
+		moon.APIKeyEnv != "KIMI_API_KEY" || moon.DefaultModel != "kimi-k2.6" {
+		t.Errorf("moonshot preset shape: %+v", moon)
 	}
 }
 
@@ -203,6 +208,22 @@ reasoning_effort = "high"
 	}
 	if got := cfg.Models["gpt-5"].ReasoningEffort; got != "high" {
 		t.Fatalf("reasoning_effort: %q", got)
+	}
+}
+
+func TestDefaultReasoningEffort(t *testing.T) {
+	cases := map[string]string{
+		"kimi-k2.6":    "high",
+		"kimi-k2.5":    "high",
+		"gpt-4o":       "",
+		"gpt-5":        "",
+		"MiniMax-M2.7": "",
+		"":             "",
+	}
+	for model, want := range cases {
+		if got := DefaultReasoningEffort(model); got != want {
+			t.Errorf("DefaultReasoningEffort(%q) = %q, want %q", model, got, want)
+		}
 	}
 }
 

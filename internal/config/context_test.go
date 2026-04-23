@@ -10,6 +10,8 @@ func TestModelContextWindowDefaults(t *testing.T) {
 		"claude-haiku-4-5":  200_000,
 		"MiniMax-M2.7":      1_000_000,
 		"MiniMax-M1":        1_000_000,
+		"kimi-k2.6":         262_144,
+		"kimi-k2.5":         262_144,
 		"unknown-xyz":       128_000,
 		"":                  128_000,
 	}

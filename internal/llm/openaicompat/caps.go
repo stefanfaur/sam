@@ -52,6 +52,17 @@ var orderedCapsTable = []capsEntry{
 		},
 	},
 	{
+		prefixes: []string{"kimi-k2"},
+		caps: Capabilities{
+			SystemRole:              "system",
+			MaxTokensField:          "max_tokens",
+			SupportsSamplingParams:  true,
+			SupportsReasoningEffort: true,
+			ReasoningSource:         "reasoning_content",
+			EchoReasoning:           true,
+		},
+	},
+	{
 		prefixes: []string{"trinity-large-thinking", "trinity-"},
 		caps: Capabilities{
 			SystemRole:             "system",

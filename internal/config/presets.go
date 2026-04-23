@@ -35,5 +35,12 @@ func Presets() map[string]ProviderEntry {
 			// extraction server-side; flip to true if probe finds inline <think>.
 			ParseThinkTags: false,
 		},
+		"moonshot": {
+			Name:         "moonshot",
+			Wire:         "openai",
+			BaseURL:      "https://api.moonshot.ai/v1",
+			APIKeyEnv:    "KIMI_API_KEY",
+			DefaultModel: "kimi-k2.6",
+		},
 	}
 }

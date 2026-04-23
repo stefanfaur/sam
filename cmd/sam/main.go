@@ -94,7 +94,12 @@ func buildProvider(cfg *config.Config, name, model string) (llm.Provider, error)
 	if model == "" {
 		model = entry.DefaultModel
 	}
-	resolver := func(m string) string { return cfg.Models[m].ReasoningEffort }
+	resolver := func(m string) string {
+		if e := cfg.Models[m].ReasoningEffort; e != "" {
+			return e
+		}
+		return config.DefaultReasoningEffort(m)
+	}
 	thinkingResolver := func(m string) int { return cfg.ModelThinkingBudget(m) }
 	return registry.Build(entry, model, resolver, thinkingResolver)
 }

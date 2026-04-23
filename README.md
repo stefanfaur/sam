@@ -24,9 +24,10 @@ SAM reads configuration from `~/.config/sam/config.toml` (or `$XDG_CONFIG_HOME/s
 
 ### Providers
 
-SAM ships four bundled provider presets — `minimax`, `anthropic`, `openai`, `arcee` —
-and accepts arbitrary user-defined entries keyed by name. Each entry declares its
-`wire` (`anthropic` or `openai`) plus the env var holding its API key.
+SAM ships five bundled provider presets — `minimax`, `anthropic`, `openai`,
+`arcee`, `moonshot` — and accepts arbitrary user-defined entries keyed by
+name. Each entry declares its `wire` (`anthropic` or `openai`) plus the env
+var holding its API key.
 
 ### Example config.toml
 
@@ -51,6 +52,12 @@ api_key_env      = "ARCEE_API_KEY"
 default_model    = "trinity-large-thinking"
 parse_think_tags = false            # flip to true for self-hosted reasoning
                                     # servers without a reasoning-parser
+
+[providers.moonshot]
+wire          = "openai"
+base_url      = "https://api.moonshot.ai/v1"
+api_key_env   = "KIMI_API_KEY"
+default_model = "kimi-k2.6"         # kimi-k2.5 also works; both 262k ctx
 
 # User-defined (not a preset) — appends to the provider map.
 [providers.groq]
@@ -90,6 +97,7 @@ minimax   = "..."
 anthropic = "..."
 openai    = "sk-..."
 arcee     = "..."
+moonshot  = "sk-..."
 ```
 
 On startup each entry's `api_key_env` is set from `[api_keys].<name>` unless the
@@ -103,6 +111,7 @@ env var is already set in the environment.
 | `ANTHROPIC_API_KEY`  | Anthropic preset |
 | `OPENAI_API_KEY`     | OpenAI preset (gpt-4o, gpt-5, o-series) |
 | `ARCEE_API_KEY`      | Arcee Conductor preset (trinity-large-thinking) |
+| `KIMI_API_KEY`       | Moonshot AI preset (kimi-k2.6, kimi-k2.5) |
 | `SAM_PROVIDER`       | Override default provider (accepts any preset or user-defined key) |
 | `SAM_MODEL`          | Override default model (bare or `provider/model`) |
 | `XDG_CONFIG_HOME`    | Override config directory |
@@ -278,12 +287,15 @@ via a `ContentThinking` block on the assistant history:
 
 - **OpenAI GPT-5 / o-series** — the server keeps reasoning hidden; we pass
   `reasoning_effort` from the per-model config but never echo reasoning back.
-- **DeepSeek-R1, Arcee Trinity-Large-Thinking, and other OpenAI-compat
-  reasoning models** — reasoning arrives as `delta.reasoning_content` /
-  `delta.reasoning` on the stream and is round-tripped into subsequent
-  requests' assistant messages. If your self-hosted server emits inline
-  `<think>…</think>` instead of server-parsed fields, set
-  `parse_think_tags = true` on the provider entry.
+- **DeepSeek-R1, Arcee Trinity-Large-Thinking, Moonshot Kimi-K2.x, and other
+  OpenAI-compat reasoning models** — reasoning arrives as
+  `delta.reasoning_content` / `delta.reasoning` on the stream and is
+  round-tripped into subsequent requests' assistant messages. The caps
+  table routes the outbound field name (`reasoning_content` vs `reasoning`)
+  per model family. Kimi-K2.x defaults to `reasoning_effort = "high"`;
+  override via `[models."kimi-k2.6"] reasoning_effort = "low"`. If your
+  self-hosted server emits inline `<think>…</think>` instead of
+  server-parsed fields, set `parse_think_tags = true` on the provider entry.
 - **Anthropic extended thinking** — not round-tripped; Anthropic requires
   cryptographically signed thinking blocks we do not carry today.
 
