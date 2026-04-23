@@ -1,6 +1,7 @@
 package tui
 
 import (
+	"encoding/json"
 	"time"
 
 	"github.com/charmbracelet/bubbles/textarea"
@@ -18,9 +19,46 @@ type pendingTurn struct {
 	events    <-chan Event
 	raw       []rune
 	committed int
-	thinkRaw  []rune
 	done      bool
 	skill     *skillCardState
+	thinking  *thinkingCardState
+	tools     []*toolCardState
+}
+
+type toolCardState struct {
+	ID        string
+	Name      string
+	Input     json.RawMessage
+	Output    string
+	Lines     int
+	EditLines int
+	Bytes     int
+	IsError   bool
+	Cancelled bool
+	StartedAt time.Time
+	EndedAt   time.Time
+	Index     int
+}
+
+type thinkingCardState struct {
+	Text      string
+	StartedAt time.Time
+	EndedAt   time.Time
+	Index     int
+}
+
+type toolInvocation struct {
+	Index   int
+	Header  string
+	Input   string
+	Output  string
+	IsError bool
+}
+
+type thinkingInvocation struct {
+	Index  int
+	Header string
+	Body   string
 }
 
 // skillCardState drives the live animated skill-invocation card and carries
@@ -56,8 +94,12 @@ type Model struct {
 	suggest       suggestState
 	lastCtrlC     time.Time
 	scanner       *blockScanner
-	skills        *skills.Registry
-	recentInvokes []skillInvocation
+	skills            *skills.Registry
+	recentInvokes     []skillInvocation
+	recentTools       []toolInvocation
+	recentThinking    []thinkingInvocation
+	nextToolIndex     int
+	nextThinkingIndex int
 }
 
 // skillInvocation is a TUI-side record of a slash-invoked skill so its body
@@ -68,7 +110,11 @@ type skillInvocation struct {
 	Source string
 }
 
-const maxRecentInvokes = 32
+const (
+	maxRecentInvokes  = 32
+	maxRecentTools    = 32
+	maxRecentThinking = 32
+)
 
 // recordInvoke pushes an invocation onto the bounded ring buffer.
 func (m *Model) recordInvoke(inv skillInvocation) {
@@ -76,6 +122,30 @@ func (m *Model) recordInvoke(inv skillInvocation) {
 	if len(m.recentInvokes) > maxRecentInvokes {
 		m.recentInvokes = m.recentInvokes[len(m.recentInvokes)-maxRecentInvokes:]
 	}
+}
+
+func (m *Model) recordTool(inv toolInvocation) {
+	m.recentTools = append(m.recentTools, inv)
+	if len(m.recentTools) > maxRecentTools {
+		m.recentTools = m.recentTools[len(m.recentTools)-maxRecentTools:]
+	}
+}
+
+func (m *Model) recordThinking(inv thinkingInvocation) {
+	m.recentThinking = append(m.recentThinking, inv)
+	if len(m.recentThinking) > maxRecentThinking {
+		m.recentThinking = m.recentThinking[len(m.recentThinking)-maxRecentThinking:]
+	}
+}
+
+func (m *Model) nextToolIdx() int {
+	m.nextToolIndex++
+	return m.nextToolIndex
+}
+
+func (m *Model) nextThinkingIdx() int {
+	m.nextThinkingIndex++
+	return m.nextThinkingIndex
 }
 
 // SetSkills attaches the skills registry to the model. Called during boot.

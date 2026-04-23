@@ -2,6 +2,7 @@ package tui
 
 import (
 	"context"
+	"encoding/json"
 	"fmt"
 	"strings"
 	"time"
@@ -124,24 +125,32 @@ func (m *Model) View() string {
 	// room against the last flushed assistant line in scrollback.
 	parts := []string{""}
 
-	// Animated skill invocation card (shown while a slash-invoked skill's
-	// turn is still running).
-	if m.pending != nil && m.pending.skill != nil && !m.pending.skill.Flushed {
-		elapsed := time.Since(m.pending.skill.StartedAt)
-		parts = append(parts, renderSkillCard(m.theme, m.pending.skill, elapsed, m.spinner.frame, true))
-	}
-
-	// Thinking card first — it streams before the response, so chronological
-	// order puts it above the live tail.
-	if m.pending != nil && len(m.pending.thinkRaw) > 0 {
-		card := renderThinkingCard(m.theme, string(m.pending.thinkRaw), true)
-		parts = append(parts, card)
+	if m.pending != nil {
+		now := time.Now()
+		inner := m.width - 4
+		if inner < 1 {
+			inner = 80
+		}
+		if m.pending.thinking != nil && m.pending.thinking.EndedAt.IsZero() {
+			parts = append(parts, renderThinkingCard(m.theme, m.pending.thinking, now,
+				m.spinner.frame, m.settings.Thinking.StreamMode, inner))
+		}
+		for _, tc := range m.pending.tools {
+			parts = append(parts, renderToolCard(m.theme, tc, now, m.spinner.frame, inner))
+		}
 	}
 
 	// Live tail (uncommitted assistant text) — the actual response.
 	if m.pending != nil && m.pending.committed < len(m.pending.raw) {
 		tail := string(m.pending.raw[m.pending.committed:])
 		parts = append(parts, tail)
+	}
+
+	// Animated skill invocation card (shown while a slash-invoked skill's
+	// turn is still running).
+	if m.pending != nil && m.pending.skill != nil && !m.pending.skill.Flushed {
+		elapsed := time.Since(m.pending.skill.StartedAt)
+		parts = append(parts, renderSkillCard(m.theme, m.pending.skill, elapsed, m.spinner.frame, true))
 	}
 
 	bottom := m.renderInputBox()
@@ -446,6 +455,16 @@ func (m *Model) dispatchCommand(cmd Command, arg string, sk *skills.Skill) (tea.
 		m.suggest.active = false
 		return m, m.showSkill(arg)
 
+	case CmdShowTool:
+		m.input.Reset()
+		m.suggest.active = false
+		return m, m.showTool(arg)
+
+	case CmdShowThinking:
+		m.input.Reset()
+		m.suggest.active = false
+		return m, m.showThinking(arg)
+
 	case CmdUnknown:
 		m.input.Reset()
 		m.suggest.active = false
@@ -501,58 +520,57 @@ func (m *Model) handleAgentEvent(msg agentEventMsg) (tea.Model, tea.Cmd) {
 		return m, waitAgent(m.pending.events)
 
 	case agent.ThinkingDelta:
-		m.pending.thinkRaw = append(m.pending.thinkRaw, []rune(ev.Text)...)
+		m.applyAgentEvent(ev)
 		m.status.state = "thinking…"
 		return m, waitAgent(m.pending.events)
 
 	case agent.TextDelta:
-		normalized := normalizeLineEndings(ev.Text)
-		m.pending.raw = append(m.pending.raw, []rune(normalized)...)
+		m.applyAgentEvent(ev)
 		m.status.state = "responding"
+
+		cmds := []tea.Cmd{}
+		if think := m.flushSettledThinking(); think != "" {
+			cmds = append(cmds, tea.Printf("%s", think))
+		}
 
 		tail := m.pending.raw[m.pending.committed:]
 		idx := m.scanner.SafeSplit(tail)
-		if idx == 0 {
-			return m, waitAgent(m.pending.events)
+		if idx != 0 {
+			prefix := tail[:idx]
+			rendered := safeGlamourRender(m.theme.Glamour(), string(prefix))
+			m.scanner.Advance(prefix)
+			m.pending.committed += idx
+			cmds = append(cmds, tea.Printf("%s", rendered))
 		}
-		prefix := tail[:idx]
-		rendered := safeGlamourRender(m.theme.Glamour(), string(prefix))
-		m.scanner.Advance(prefix)
-		m.pending.committed += idx
-		return m, tea.Sequence(
-			tea.Printf("%s", rendered),
-			waitAgent(m.pending.events),
-		)
+		cmds = append(cmds, waitAgent(m.pending.events))
+		return m, tea.Sequence(cmds...)
 
 	case agent.ToolCall:
 		m.status.state = "tool:" + ev.Name
-		var flushCmd tea.Cmd
+		cmds := []tea.Cmd{}
 		if m.pending.committed < len(m.pending.raw) {
 			tail := m.pending.raw[m.pending.committed:]
 			rendered := safeGlamourRender(m.theme.Glamour(), string(tail))
 			m.scanner.Advance(tail)
 			m.pending.committed = len(m.pending.raw)
-			flushCmd = tea.Printf("%s", rendered)
+			cmds = append(cmds, tea.Printf("%s", rendered))
 		}
-		m.pending.thinkRaw = nil
-		toolCallStr := renderToolCall(m.theme, ev.Name, ev.Input)
-		cmds := []tea.Cmd{}
-		if flushCmd != nil {
-			cmds = append(cmds, flushCmd)
+		m.applyAgentEvent(ev)
+		if think := m.flushSettledThinking(); think != "" {
+			cmds = append(cmds, tea.Printf("%s", think))
 		}
-		cmds = append(cmds,
-			tea.Printf("%s", toolCallStr),
-			waitAgent(m.pending.events),
-		)
+		cmds = append(cmds, waitAgent(m.pending.events))
 		return m, tea.Sequence(cmds...)
 
 	case agent.ToolResult:
-		result := renderToolResult(m.theme, ev.Name, ev.Output, ev.IsError)
+		m.applyAgentEvent(ev)
 		m.status.iter++
-		return m, tea.Sequence(
-			tea.Printf("%s", result),
-			waitAgent(m.pending.events),
-		)
+		cmds := []tea.Cmd{}
+		if card := m.flushSettledTool(ev.ID); card != "" {
+			cmds = append(cmds, tea.Printf("%s", card))
+		}
+		cmds = append(cmds, waitAgent(m.pending.events))
+		return m, tea.Sequence(cmds...)
 
 	case agent.ApprovalRequest:
 		m.status.state = "awaiting-approval"
@@ -573,13 +591,20 @@ func (m *Model) handleAgentEvent(msg agentEventMsg) (tea.Model, tea.Cmd) {
 		errorStr := renderError(m.theme, ev.Err)
 		m.status.state = "error"
 		m.spinner.on = false
-		return m, tea.Sequence(
-			tea.Printf("%s", errorStr),
-			waitAgent(m.pending.events),
-		)
+		var settled []string
+		if m.pending != nil {
+			settled = m.flushTurnSettled()
+		}
+		cmds := []tea.Cmd{}
+		for _, s := range settled {
+			cmds = append(cmds, tea.Printf("%s", s))
+		}
+		cmds = append(cmds, tea.Printf("%s", errorStr), waitAgent(m.pending.events))
+		return m, tea.Sequence(cmds...)
 
 	case agent.TurnDone:
 		m.pending.done = true
+		settled := m.flushTurnSettled()
 		var cardCmd tea.Cmd
 		if m.pending.skill != nil && !m.pending.skill.Flushed {
 			m.pending.skill.Flushed = true
@@ -600,6 +625,9 @@ func (m *Model) handleAgentEvent(msg agentEventMsg) (tea.Model, tea.Cmd) {
 		m.spinner.on = false
 		m.input.Focus()
 		cmds := []tea.Cmd{}
+		for _, s := range settled {
+			cmds = append(cmds, tea.Printf("%s", s))
+		}
 		if cardCmd != nil {
 			cmds = append(cmds, cardCmd)
 		}
@@ -671,6 +699,86 @@ func (m *Model) showSkill(arg string) tea.Cmd {
 	return tea.Printf("%s\n%s", header, body)
 }
 
+func (m *Model) showTool(arg string) tea.Cmd {
+	if len(m.recentTools) == 0 {
+		return m.addInfo("no tool invocations yet")
+	}
+	idx := 0
+	if arg != "" {
+		n, err := parseNonNegInt(arg)
+		if err != nil {
+			return m.addInfo("show-tool: bad index: " + arg)
+		}
+		idx = n
+	}
+	return tea.Printf("%s", m.resolveToolDump(idx))
+}
+
+func (m *Model) showThinking(arg string) tea.Cmd {
+	if len(m.recentThinking) == 0 {
+		return m.addInfo("no thinking blocks yet")
+	}
+	idx := 0
+	if arg != "" {
+		n, err := parseNonNegInt(arg)
+		if err != nil {
+			return m.addInfo("show-thinking: bad index: " + arg)
+		}
+		idx = n
+	}
+	return tea.Printf("%s", m.resolveThinkingDump(idx))
+}
+
+func (m *Model) resolveToolDump(idx int) string {
+	var inv *toolInvocation
+	if idx == 0 && len(m.recentTools) > 0 {
+		inv = &m.recentTools[len(m.recentTools)-1]
+	} else {
+		for i := range m.recentTools {
+			if m.recentTools[i].Index == idx {
+				inv = &m.recentTools[i]
+				break
+			}
+		}
+	}
+	if inv == nil {
+		return m.theme.ToolError.Render(fmt.Sprintf("unknown tool index %d", idx))
+	}
+	header := m.theme.ToolCardHeader.Render("● " + inv.Header)
+	var sb strings.Builder
+	sb.WriteString(header)
+	sb.WriteByte('\n')
+	if inv.Input != "" {
+		sb.WriteString(m.theme.ToolCardMeta.Render(inv.Input))
+		sb.WriteString("\n---\n")
+	}
+	if inv.IsError {
+		sb.WriteString(m.theme.ToolError.Render(inv.Output))
+	} else {
+		sb.WriteString(m.theme.ToolResult.Render(inv.Output))
+	}
+	return sb.String()
+}
+
+func (m *Model) resolveThinkingDump(idx int) string {
+	var inv *thinkingInvocation
+	if idx == 0 && len(m.recentThinking) > 0 {
+		inv = &m.recentThinking[len(m.recentThinking)-1]
+	} else {
+		for i := range m.recentThinking {
+			if m.recentThinking[i].Index == idx {
+				inv = &m.recentThinking[i]
+				break
+			}
+		}
+	}
+	if inv == nil {
+		return m.theme.ToolError.Render(fmt.Sprintf("unknown thinking index %d", idx))
+	}
+	return m.theme.ThinkingHeader.Render(thinkingGlyph+" "+inv.Header) + "\n---\n" +
+		m.theme.Thinking.Render(inv.Body)
+}
+
 func parseNonNegInt(s string) (int, error) {
 	n := 0
 	for _, r := range s {
@@ -706,10 +814,192 @@ func (m *Model) reloadSkills() tea.Cmd {
 	return m.addInfo(fmt.Sprintf("skills reloaded: %d enabled, %d shadowed, %d errors", enabled, shadowed, errors))
 }
 
-func renderThinkingCard(t *Theme, text string, streaming bool) string {
-	header := t.ThinkingHeader.Render("✦ thinking")
-	body := strings.TrimRight(text, "\n")
-	return t.Thinking.Render(header + "\n" + body)
+// flushSettledThinking removes a settled thinking card from pending state,
+// records it to the ring, and returns the rendered card for tea.Printf.
+// Returns empty string if no thinking card or it is still live.
+func (m *Model) flushSettledThinking() string {
+	if m.pending == nil || m.pending.thinking == nil {
+		return ""
+	}
+	th := m.pending.thinking
+	if th.EndedAt.IsZero() {
+		return ""
+	}
+	now := time.Now()
+	inner := m.width - 4
+	if inner < 1 {
+		inner = 80
+	}
+	rendered := renderThinkingCard(m.theme, th, now, 0, "full", inner)
+	m.recordThinking(thinkingInvocation{
+		Index: th.Index,
+		Header: fmt.Sprintf("thought for %s · %d chars",
+			formatElapsed(th.EndedAt.Sub(th.StartedAt)), len(th.Text)),
+		Body: th.Text,
+	})
+	m.pending.thinking = nil
+	return rendered
+}
+
+// flushSettledTool removes the settled tool card matching id from pending
+// state, records it to the ring, and returns the rendered card.
+func (m *Model) flushSettledTool(id string) string {
+	if m.pending == nil {
+		return ""
+	}
+	for i, tc := range m.pending.tools {
+		if tc.ID != id {
+			continue
+		}
+		if tc.EndedAt.IsZero() {
+			return ""
+		}
+		now := time.Now()
+		inner := m.width - 4
+		if inner < 1 {
+			inner = 80
+		}
+		rendered := renderToolCard(m.theme, tc, now, 0, inner)
+		m.recordTool(toolInvocation{
+			Index:   tc.Index,
+			Header:  fmt.Sprintf("%s · %s", tc.Name, toolSummary(tc, now)),
+			Input:   toolInputPreview(tc.Name, tc.Input),
+			Output:  tc.Output,
+			IsError: tc.IsError,
+		})
+		m.pending.tools = append(m.pending.tools[:i], m.pending.tools[i+1:]...)
+		return rendered
+	}
+	return ""
+}
+
+// flushTurnSettled marks any open cards as cancelled/settled, renders their
+// final static forms, records them to ring buffers, and returns the rendered
+// strings in chronological order (thinking → tools).
+func (m *Model) flushTurnSettled() []string {
+	if m.pending == nil {
+		return nil
+	}
+	now := time.Now()
+	inner := m.width - 4
+	if inner < 1 {
+		inner = 80
+	}
+	var out []string
+	if m.pending.thinking != nil {
+		if m.pending.thinking.EndedAt.IsZero() {
+			m.pending.thinking.EndedAt = now
+		}
+		out = append(out, renderThinkingCard(m.theme, m.pending.thinking, now, 0, "full", inner))
+		m.recordThinking(thinkingInvocation{
+			Index: m.pending.thinking.Index,
+			Header: fmt.Sprintf("thought for %s · %d chars",
+				formatElapsed(m.pending.thinking.EndedAt.Sub(m.pending.thinking.StartedAt)),
+				len(m.pending.thinking.Text)),
+			Body: m.pending.thinking.Text,
+		})
+	}
+	for _, tc := range m.pending.tools {
+		if tc.EndedAt.IsZero() {
+			tc.Cancelled = true
+			tc.EndedAt = now
+		}
+		out = append(out, renderToolCard(m.theme, tc, now, 0, inner))
+		m.recordTool(toolInvocation{
+			Index:   tc.Index,
+			Header:  fmt.Sprintf("%s · %s", tc.Name, toolSummary(tc, now)),
+			Input:   toolInputPreview(tc.Name, tc.Input),
+			Output:  tc.Output,
+			IsError: tc.IsError,
+		})
+	}
+	return out
+}
+
+// applyAgentEvent mutates pending state in response to an agent event. It
+// does not emit tea.Cmds; callers are responsible for scheduling follow-up
+// work (waitAgent, tea.Printf, etc.). Exists as a test hook so the state
+// transitions can be driven without the full Bubbletea event loop.
+func (m *Model) applyAgentEvent(ev Event) {
+	if m.pending == nil {
+		return
+	}
+	switch ev := ev.(type) {
+	case agent.ThinkingDelta:
+		if m.pending.thinking == nil {
+			m.pending.thinking = &thinkingCardState{
+				Index:     m.nextThinkingIdx(),
+				StartedAt: time.Now(),
+			}
+		}
+		m.pending.thinking.Text += ev.Text
+
+	case agent.TextDelta:
+		if m.pending.thinking != nil && m.pending.thinking.EndedAt.IsZero() {
+			m.pending.thinking.EndedAt = time.Now()
+		}
+		normalized := normalizeLineEndings(ev.Text)
+		m.pending.raw = append(m.pending.raw, []rune(normalized)...)
+
+	case agent.ToolCall:
+		if m.pending.thinking != nil && m.pending.thinking.EndedAt.IsZero() {
+			m.pending.thinking.EndedAt = time.Now()
+		}
+		m.pending.tools = append(m.pending.tools, &toolCardState{
+			ID:        ev.ID,
+			Name:      ev.Name,
+			Input:     ev.Input,
+			StartedAt: time.Now(),
+			Index:     m.nextToolIdx(),
+		})
+
+	case agent.ToolResult:
+		tc := m.findTool(ev.ID)
+		if tc == nil {
+			tc = &toolCardState{
+				ID:    ev.ID,
+				Name:  ev.Name,
+				Index: m.nextToolIdx(),
+			}
+			m.pending.tools = append(m.pending.tools, tc)
+		}
+		tc.Output = ev.Output
+		tc.IsError = ev.IsError
+		tc.EndedAt = time.Now()
+		tc.Lines = countLines(ev.Output)
+		tc.Bytes = len(ev.Output)
+		if ev.Name == "Edit" {
+			var data map[string]any
+			if err := json.Unmarshal(tc.Input, &data); err == nil {
+				if ns, ok := data["new_string"].(string); ok {
+					tc.EditLines = strings.Count(ns, "\n") + 1
+				}
+			}
+		}
+	}
+}
+
+func (m *Model) findTool(id string) *toolCardState {
+	if m.pending == nil {
+		return nil
+	}
+	for _, tc := range m.pending.tools {
+		if tc.ID == id {
+			return tc
+		}
+	}
+	return nil
+}
+
+func countLines(s string) int {
+	if s == "" {
+		return 0
+	}
+	trimmed := strings.TrimRight(s, "\n")
+	if trimmed == "" {
+		return 0
+	}
+	return strings.Count(trimmed, "\n") + 1
 }
 
 func (m *Model) renderUserMsg(text string) string {

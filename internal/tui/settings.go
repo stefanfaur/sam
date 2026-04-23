@@ -11,6 +11,11 @@ import (
 type Settings struct {
 	Statusbar StatusbarSettings `toml:"statusbar"`
 	Theme     ThemeSettings     `toml:"theme"`
+	Thinking  ThinkingSettings  `toml:"thinking"`
+}
+
+type ThinkingSettings struct {
+	StreamMode string `toml:"stream_mode"` // "full" | "header"
 }
 
 type StatusbarSettings struct {
@@ -77,7 +82,15 @@ func DefaultSettings() Settings {
 			StateError:      "#f87171",
 			StateApproval:   "#a78bfa",
 		},
+		Thinking: ThinkingSettings{StreamMode: "full"},
 	}
+}
+
+func normalizeSettings(s Settings) Settings {
+	if s.Thinking.StreamMode != "full" && s.Thinking.StreamMode != "header" {
+		s.Thinking.StreamMode = "full"
+	}
+	return s
 }
 
 func settingsPath() string {
@@ -97,6 +110,7 @@ func LoadSettings() Settings {
 	}
 	_ = toml.Unmarshal(data, &s)
 	validate(&s)
+	s = normalizeSettings(s)
 	return s
 }
 

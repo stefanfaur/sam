@@ -177,7 +177,15 @@ redact `Authorization` and `X-Api-Key` headers.
 - `/cwd` — Show current working directory
 - `/settings` — Open settings modal (statusline, providers, theme, skills)
 - `/reload-skills` — Re-scan skill roots for new or changed skills
+- `/show-tool [N]` — Expand a previously-collapsed tool call (default: latest)
+- `/show-thinking [N]` — Expand a previously-collapsed thinking block
 - `/help` — Show this help
+
+Tool calls and thinking blocks render as rounded-border cards with live
+spinners; once the turn settles they collapse to compact one-line markers in
+scrollback (`● Bash · 47 lines · 1.2s [/show-tool 3]`, `✧ thought for 4.2s`).
+Toggle thinking stream depth (`full` vs `header`) via `/settings` →
+**Statusline** → Thinking stream.
 
 User-invocable skills also appear here as `/skill-name [args]`.
 

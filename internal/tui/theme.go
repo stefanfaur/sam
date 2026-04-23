@@ -24,8 +24,6 @@ type Theme struct {
 	InputPrompt     lipgloss.Style
 	UserMsg         lipgloss.Style
 	Info            lipgloss.Style
-	ToolHeader      lipgloss.Style
-	ToolInput       lipgloss.Style
 	ToolResult      lipgloss.Style
 	ToolError       lipgloss.Style
 	DebugPanel      lipgloss.Style
@@ -38,7 +36,26 @@ type Theme struct {
 	Suggest         lipgloss.Style
 	SuggestSelected lipgloss.Style
 
+	ToolCard        lipgloss.Style
+	ToolCardError   lipgloss.Style
+	ToolCardHeader  lipgloss.Style
+	ToolCardMeta    lipgloss.Style
+	ToolCardPeek    lipgloss.Style
+	ToolCardPeekErr lipgloss.Style
+
+	ThinkingCard     lipgloss.Style
+	ThinkingCardBody lipgloss.Style
+	ThinkingCardMeta lipgloss.Style
+
+	dark bool
 	glam *glamour.TermRenderer
+}
+
+func (t *Theme) subtleBg() lipgloss.Color {
+	if t.dark {
+		return lipgloss.Color("235")
+	}
+	return lipgloss.Color("254")
 }
 
 func NewTheme(t ThemeSettings) *Theme {
@@ -55,6 +72,7 @@ func NewTheme(t ThemeSettings) *Theme {
 		StateApproval:   parseColor(t.StateApproval, "141"),
 		GlamourStyle:    fallback(t.GlamourStyle, "dark"),
 	}
+	th.dark = lipgloss.HasDarkBackground()
 	th.Apply(80)
 	return th
 }
@@ -68,8 +86,6 @@ func (t *Theme) Apply(width int) {
 		BorderForeground(t.UserBorder).
 		Padding(0, 1).MarginTop(1).Bold(true)
 
-	t.ToolHeader = lipgloss.NewStyle().Foreground(t.Accent).Bold(true)
-	t.ToolInput = lipgloss.NewStyle().Foreground(t.Muted).Italic(true)
 	t.ToolResult = lipgloss.NewStyle().Foreground(t.Muted)
 	t.ToolError = lipgloss.NewStyle().Foreground(t.ErrorFg)
 	t.StatusBar = lipgloss.NewStyle().
@@ -100,6 +116,32 @@ func (t *Theme) Apply(width int) {
 		Border(lipgloss.RoundedBorder()).BorderForeground(t.Muted).Padding(0, 1)
 	t.InputBoxFocus = lipgloss.NewStyle().
 		Border(lipgloss.RoundedBorder()).BorderForeground(t.Accent).Padding(0, 1)
+
+	faintBorder := lipgloss.Color("238")
+	if !t.dark {
+		faintBorder = lipgloss.Color("250")
+	}
+	t.ToolCard = lipgloss.NewStyle().
+		Border(lipgloss.RoundedBorder()).
+		BorderForeground(faintBorder).
+		Padding(0, 1)
+	t.ToolCardError = lipgloss.NewStyle().
+		Border(lipgloss.RoundedBorder()).
+		BorderForeground(t.ErrorFg).
+		Padding(0, 1)
+	t.ToolCardHeader = lipgloss.NewStyle().Foreground(t.Accent).Bold(true)
+	t.ToolCardMeta = lipgloss.NewStyle().Foreground(t.Muted)
+	t.ToolCardPeek = lipgloss.NewStyle().Foreground(t.Muted).Italic(true)
+	t.ToolCardPeekErr = lipgloss.NewStyle().Foreground(t.ErrorFg).Italic(true)
+
+	t.ThinkingCard = lipgloss.NewStyle().
+		Border(lipgloss.RoundedBorder()).
+		BorderForeground(faintBorder).
+		Padding(0, 1)
+	t.ThinkingCardBody = lipgloss.NewStyle().
+		Foreground(t.Muted).Italic(true).
+		Background(t.subtleBg())
+	t.ThinkingCardMeta = lipgloss.NewStyle().Foreground(t.Muted)
 
 	t.glam, _ = glamour.NewTermRenderer(
 		glamour.WithStandardStyle(t.GlamourStyle),

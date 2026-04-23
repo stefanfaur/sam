@@ -24,6 +24,8 @@ const (
 	CmdSkill        Command = "skill"
 	CmdReloadSkills Command = "reload-skills"
 	CmdShowSkill    Command = "show-skill"
+	CmdShowTool     Command = "show-tool"
+	CmdShowThinking Command = "show-thinking"
 )
 
 // commandSuggestions lists built-in slash commands.
@@ -42,6 +44,8 @@ var commandSuggestions = []struct {
 	{"/reload-skills", "re-scan skill roots"},
 	{"/reset", "reset history and session allowlist"},
 	{"/show-skill", "expand a previously-collapsed skill invocation (arg: index; default last)"},
+	{"/show-tool", "expand a previously-collapsed tool call (arg: index; default last)"},
+	{"/show-thinking", "expand a previously-collapsed thinking block (arg: index; default last)"},
 	{"/settings", "open settings modal (statusline, providers, theme)"},
 }
 
@@ -49,7 +53,7 @@ var commandSuggestions = []struct {
 // Skills with a colliding name are demoted to namespaced-only.
 var BuiltinNames = []string{
 	"exit", "quit", "clear", "reset", "model", "provider", "auth", "cwd", "help",
-	"settings", "reload-skills", "show-skill",
+	"settings", "reload-skills", "show-skill", "show-tool", "show-thinking",
 }
 
 // parseCommand extracts a slash command from user input. The registry, when
@@ -89,6 +93,10 @@ func parseCommand(text string, reg *skills.Registry) (Command, string, *skills.S
 		return CmdReloadSkills, "", nil
 	case "show-skill":
 		return CmdShowSkill, arg, nil
+	case "show-tool":
+		return CmdShowTool, arg, nil
+	case "show-thinking":
+		return CmdShowThinking, arg, nil
 	}
 	// Slash name isn't a built-in. If a registry is attached, try skill lookup.
 	// Skill names are lowercased at validation time (regex), so matching is
@@ -145,6 +153,8 @@ const helpTextBuiltin = `Available commands:
   /settings           Open settings modal (statusline, providers, theme)
   /reload-skills      Re-scan skill roots
   /show-skill [n]     Expand a previously-collapsed skill invocation (default: latest)
+  /show-tool [n]      Expand a previously-collapsed tool call (default: latest)
+  /show-thinking [n]  Expand a previously-collapsed thinking block (default: latest)
   /help               Show this help
 
 Key bindings:

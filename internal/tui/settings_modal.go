@@ -225,6 +225,12 @@ func (m *settingsModal) buildStatuslineForm() *huh.Form {
 					huh.NewOption("context", "context"),
 					huh.NewOption("tokens", "tokens"),
 				).Value(&m.selectedSegments),
+			huh.NewSelect[string]().
+				Title("Thinking stream").
+				Options(
+					huh.NewOption("full", "full"),
+					huh.NewOption("header", "header"),
+				).Value(&m.pending.Thinking.StreamMode),
 		),
 	).WithShowHelp(true).WithShowErrors(false)
 }
