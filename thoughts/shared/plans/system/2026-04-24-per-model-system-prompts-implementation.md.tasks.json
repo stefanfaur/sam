@@ -1,0 +1,16 @@
+{
+  "tasks": [
+    {"id": "4",  "name": "Task 0: PromptFamily type + config merge",        "status": "completed"},
+    {"id": "7",  "name": "Task 1: FamilyForModel method",                    "status": "completed"},
+    {"id": "8",  "name": "Task 2: Embedded family prompt content files",     "status": "completed"},
+    {"id": "11", "name": "Task 3: Extend //go:embed + family loaders",       "status": "completed"},
+    {"id": "1",  "name": "Task 4: Seed verification for prompts/ subdir",    "status": "completed"},
+    {"id": "9",  "name": "Task 5: Agent.SetSystem",                          "status": "completed"},
+    {"id": "5",  "name": "Task 6: resolveSystemPrompt + integration tests",  "status": "completed"},
+    {"id": "2",  "name": "Task 7: Thread SystemResolverFn through TUI",      "status": "completed"},
+    {"id": "10", "name": "Task 8: Wire SetSystem into model-change paths",   "status": "completed"},
+    {"id": "3",  "name": "Task 9: End-to-end smoke test",                    "status": "completed"},
+    {"id": "6",  "name": "Task 10: README update",                           "status": "completed"}
+  ],
+  "lastUpdated": "2026-04-24"
+}
