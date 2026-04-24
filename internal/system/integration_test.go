@@ -3,11 +3,41 @@ package system_test
 import (
 	"os"
 	"path/filepath"
+	"strings"
 	"testing"
 
 	"github.com/stefanfaur/sam/internal/config"
 	"github.com/stefanfaur/sam/internal/system"
 )
+
+// resolveForTest mirrors cmd/sam/main.go::resolveSystemPrompt without the
+// logger. Keep the two in lockstep — any change to main's resolver must land
+// here too, or these tests silently diverge from production.
+func resolveForTest(cfg *config.Config, sysDir, model string) string {
+	if cfg.SystemPromptFile != "" {
+		if s := cfg.LoadSystemPrompt(""); s != "" {
+			return s
+		}
+	}
+	base, _ := system.LoadSystemPrompt(sysDir)
+	if base == "" {
+		base = system.EmbeddedPrompt()
+	}
+	family := cfg.FamilyForModel(model)
+	if family == "" {
+		return base
+	}
+	var add string
+	if system.FamilyPromptExists(sysDir, family) {
+		add, _ = system.LoadFamilyPrompt(sysDir, family)
+	} else {
+		add = system.EmbeddedFamilyPrompt(family)
+	}
+	if add == "" {
+		return base
+	}
+	return strings.TrimRight(base, "\n\t ") + "\n\n" + strings.TrimRight(add, "\n\t ")
+}
 
 // resolvePrompt mirrors the lookup chain in cmd/sam/main.go: disk beats
 // embedded, and cfg.LoadSystemPrompt layers CLI flag / config_file on top.
@@ -99,5 +129,101 @@ func TestPrecedence_FlagBeatsConfig(t *testing.T) {
 	got := cfg.LoadSystemPrompt("fallback")
 	if got != want {
 		t.Fatalf("got %q want %q", got, want)
+	}
+}
+
+func TestResolveSystemPrompt_OverrideTotal(t *testing.T) {
+	dir := t.TempDir()
+	override := filepath.Join(dir, "override.md")
+	if err := os.WriteFile(override, []byte("OVERRIDE"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	cfg := &config.Config{
+		SystemPromptFile: override,
+		PromptFamilies:   config.DefaultPromptFamilies(),
+	}
+	got := resolveForTest(cfg, dir, "claude-sonnet-4-5")
+	if got != "OVERRIDE" {
+		t.Fatalf("override ignored: %q", got)
+	}
+}
+
+func TestResolveSystemPrompt_BaseOnly_UnknownModel(t *testing.T) {
+	dir := t.TempDir()
+	cfg := &config.Config{PromptFamilies: config.DefaultPromptFamilies()}
+	got := resolveForTest(cfg, dir, "random-model-x")
+	if got != system.EmbeddedPrompt() {
+		t.Fatalf("expected embedded base only, got %q", got)
+	}
+}
+
+func TestResolveSystemPrompt_BasePlusFamily_Embedded(t *testing.T) {
+	dir := t.TempDir()
+	cfg := &config.Config{PromptFamilies: config.DefaultPromptFamilies()}
+	got := resolveForTest(cfg, dir, "claude-sonnet-4-5")
+	want := strings.TrimRight(system.EmbeddedPrompt(), "\n\t ") + "\n\n" + strings.TrimRight(system.EmbeddedFamilyPrompt("claude"), "\n\t ")
+	if got != want {
+		t.Fatalf("composition mismatch")
+	}
+}
+
+func TestResolveSystemPrompt_DiskFamilyOverridesEmbedded(t *testing.T) {
+	dir := t.TempDir()
+	if err := os.MkdirAll(filepath.Join(dir, "prompts"), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(dir, "prompts", "claude.md"), []byte("DISK FAMILY"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	cfg := &config.Config{PromptFamilies: config.DefaultPromptFamilies()}
+	got := resolveForTest(cfg, dir, "claude-sonnet-4-5")
+	if !strings.HasSuffix(got, "\n\nDISK FAMILY") {
+		t.Fatalf("disk family not applied: %q", got)
+	}
+}
+
+func TestResolveSystemPrompt_EmptyFamilyFileMeansNoAppend(t *testing.T) {
+	dir := t.TempDir()
+	if err := os.MkdirAll(filepath.Join(dir, "prompts"), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(dir, "prompts", "claude.md"), []byte(""), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	cfg := &config.Config{PromptFamilies: config.DefaultPromptFamilies()}
+	got := resolveForTest(cfg, dir, "claude-sonnet-4-5")
+	if got != system.EmbeddedPrompt() {
+		t.Fatalf("expected base only, got %q", got)
+	}
+	if strings.Contains(got, "CLAUDE FAMILY") {
+		t.Fatal("embedded family leaked through empty disk file")
+	}
+}
+
+func TestResolveSystemPrompt_MissingFamilyFileFallsBackToEmbedded(t *testing.T) {
+	dir := t.TempDir()
+	cfg := &config.Config{PromptFamilies: config.DefaultPromptFamilies()}
+	got := resolveForTest(cfg, dir, "claude-sonnet-4-5")
+	if !strings.Contains(got, "CLAUDE FAMILY") {
+		t.Fatalf("embedded family should apply when disk file missing: %q", got)
+	}
+}
+
+func TestResolveSystemPrompt_JoinFormatExactlyOneBlankLine(t *testing.T) {
+	dir := t.TempDir()
+	if err := os.WriteFile(filepath.Join(dir, "system-prompt.md"), []byte("BASE\n\n\n"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.MkdirAll(filepath.Join(dir, "prompts"), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(dir, "prompts", "claude.md"), []byte("FAM\n\n"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	cfg := &config.Config{PromptFamilies: config.DefaultPromptFamilies()}
+	got := resolveForTest(cfg, dir, "claude-sonnet-4-5")
+	want := "BASE\n\nFAM"
+	if got != want {
+		t.Fatalf("join format wrong: got %q want %q", got, want)
 	}
 }

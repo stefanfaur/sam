@@ -121,6 +121,47 @@ func buildRegistry(cwd, sysDir string, rtkClient *rtk.Client) (*tools.Registry, 
 	return reg, tracker
 }
 
+// resolveSystemPrompt builds the effective system prompt for a given model.
+// cfg.SystemPromptFile (CLI / config total-override) short-circuits family
+// composition. Otherwise base (disk > embedded) is joined with the family
+// addendum (disk > embedded) via a single blank line.
+func resolveSystemPrompt(cfg *config.Config, sysDir, model string, logger *slog.Logger) string {
+	if cfg.SystemPromptFile != "" {
+		if s := cfg.LoadSystemPrompt(""); s != "" {
+			return s
+		}
+	}
+	base, _ := system.LoadSystemPrompt(sysDir)
+	if base == "" {
+		base = system.EmbeddedPrompt()
+	}
+	family := cfg.FamilyForModel(model)
+	if family == "" {
+		if logger != nil {
+			logger.Info("system: family resolved", "model", model, "family", "", "source", "none")
+		}
+		return base
+	}
+	var add, source string
+	if system.FamilyPromptExists(sysDir, family) {
+		add, _ = system.LoadFamilyPrompt(sysDir, family)
+		source = "disk"
+	} else {
+		add = system.EmbeddedFamilyPrompt(family)
+		source = "embedded"
+	}
+	if add == "" {
+		if logger != nil {
+			logger.Debug("system: family resolved with no content", "family", family, "source", source)
+		}
+		return base
+	}
+	if logger != nil {
+		logger.Info("system: family resolved", "model", model, "family", family, "source", source)
+	}
+	return strings.TrimRight(base, "\n\t ") + "\n\n" + strings.TrimRight(add, "\n\t ")
+}
+
 func runTUI(ctx context.Context, cfg *config.Config, sysDir string, logger *slog.Logger, ring *logging.Ring, rtkClient *rtk.Client) {
 	cwd, _ := os.Getwd()
 	registry, _ := buildRegistry(cwd, sysDir, rtkClient)
@@ -128,11 +169,7 @@ func runTUI(ctx context.Context, cfg *config.Config, sysDir string, logger *slog
 	pol := policy.Default()
 	prov := mustProvider(cfg)
 
-	diskPrompt, _ := system.LoadSystemPrompt(sysDir)
-	if diskPrompt == "" {
-		diskPrompt = system.EmbeddedPrompt()
-	}
-	sys := cfg.LoadSystemPrompt(diskPrompt)
+	sys := resolveSystemPrompt(cfg, sysDir, cfg.Model, logger)
 
 	skillReg := buildSkillsRegistry(cwd, logger)
 
@@ -197,11 +234,7 @@ func runAgentOneShot(ctx context.Context, cfg *config.Config, sysDir, prompt str
 	registry, _ := buildRegistry(cwd, sysDir, rtkClient)
 	pol := policy.AllowAll()
 	prov := mustProvider(cfg)
-	diskPrompt, _ := system.LoadSystemPrompt(sysDir)
-	if diskPrompt == "" {
-		diskPrompt = system.EmbeddedPrompt()
-	}
-	sys := cfg.LoadSystemPrompt(diskPrompt)
+	sys := resolveSystemPrompt(cfg, sysDir, cfg.Model, logger)
 
 	a := agent.New(agent.Options{
 		Provider:  prov,
