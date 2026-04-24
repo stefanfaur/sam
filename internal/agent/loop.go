@@ -5,11 +5,17 @@ import (
 	"encoding/json"
 	"fmt"
 	"strings"
+	"sync"
 
 	"github.com/stefanfaur/sam/internal/llm"
 	"github.com/stefanfaur/sam/internal/policy"
 	"github.com/stefanfaur/sam/internal/tools"
 )
+
+// parallelToolSem caps concurrent parallel-safe tool executions across the
+// process. A turn rarely emits more than a handful of parallel-safe calls, so
+// 8 covers typical fan-out without a config knob.
+var parallelToolSem = make(chan struct{}, 8)
 
 func (a *Agent) turn(ctx context.Context, s submit) {
 	// Add user message to history
@@ -41,17 +47,25 @@ func (a *Agent) turn(ctx context.Context, s submit) {
 			return
 		}
 
-		// Run each tool sequentially
-		results := make([]llm.ContentBlock, 0, len(pending))
-		for _, call := range pending {
-			res := a.runToolCall(ctx, s, call)
-			results = append(results, llm.ContentBlock{
-				Type:      llm.ContentToolResult,
-				ToolUseID: call.ID,
-				Output:    res.Output,
-				IsError:   res.IsError,
-			})
-			emitToChan(s.out, ToolResult{ID: call.ID, Name: call.Name, Output: res.Output, IsError: res.IsError, Rewritten: res.Rewritten}, s.ctx)
+		results := make([]llm.ContentBlock, len(pending))
+		i := 0
+		for i < len(pending) {
+			headTool, _ := a.tools.Get(pending[i].Name)
+			if headTool == nil || !headTool.ParallelSafe() {
+				results[i] = a.execOne(ctx, s, pending[i])
+				i++
+				continue
+			}
+			j := i + 1
+			for j < len(pending) {
+				t, _ := a.tools.Get(pending[j].Name)
+				if t == nil || !t.ParallelSafe() {
+					break
+				}
+				j++
+			}
+			a.execParallelGroup(ctx, s, pending[i:j], results[i:j])
+			i = j
 		}
 
 		a.history = append(a.history, llm.Message{Role: llm.RoleUser, Content: results})
@@ -172,6 +186,56 @@ func (a *Agent) consumeStream(ctx context.Context, req llm.Request, out chan Eve
 	return msg, pending, "", fmt.Errorf("stream closed prematurely")
 }
 
+// execParallelGroup runs the given calls concurrently, writing each call's
+// resulting ContentBlock into out[idx] at the matching index. Every goroutine
+// writes exactly one block, including when the tool panics. Blocks until the
+// whole group is joined.
+func (a *Agent) execParallelGroup(
+	ctx context.Context, s submit,
+	calls []ToolCall, out []llm.ContentBlock,
+) {
+	var wg sync.WaitGroup
+	for idx, call := range calls {
+		wg.Add(1)
+		go func(idx int, call ToolCall) {
+			defer wg.Done()
+			defer func() {
+				if r := recover(); r != nil {
+					out[idx] = llm.ContentBlock{
+						Type:      llm.ContentToolResult,
+						ToolUseID: call.ID,
+						Output:    fmt.Sprintf("panic during tool dispatch: %v", r),
+						IsError:   true,
+					}
+				}
+			}()
+			parallelToolSem <- struct{}{}
+			defer func() { <-parallelToolSem }()
+			out[idx] = a.execOne(ctx, s, call)
+		}(idx, call)
+	}
+	wg.Wait()
+}
+
+// execOne runs a single tool call, emits its ToolResult event, and returns the
+// content block to append to history. Used by both serial and parallel dispatch.
+func (a *Agent) execOne(ctx context.Context, s submit, call ToolCall) llm.ContentBlock {
+	res := a.runToolCall(ctx, s, call)
+	emitToChan(s.out, ToolResult{
+		ID:        call.ID,
+		Name:      call.Name,
+		Output:    res.Output,
+		IsError:   res.IsError,
+		Rewritten: res.Rewritten,
+	}, s.ctx)
+	return llm.ContentBlock{
+		Type:      llm.ContentToolResult,
+		ToolUseID: call.ID,
+		Output:    res.Output,
+		IsError:   res.IsError,
+	}
+}
+
 // runToolCall executes a single tool call
 func (a *Agent) runToolCall(ctx context.Context, s submit, call ToolCall) tools.Result {
 	// Look up tool
@@ -230,16 +294,6 @@ func (a *Agent) runToolCall(ctx context.Context, s submit, call ToolCall) tools.
 		return tools.Result{
 			Output:  fmt.Sprintf("tool error: %v", err),
 			IsError: true,
-		}
-	}
-
-	// Track read files
-	if call.Name == "Read" && !result.IsError {
-		var input struct {
-			FilePath string `json:"file_path"`
-		}
-		if err := json.Unmarshal(call.Input, &input); err == nil && input.FilePath != "" {
-			a.readFiles[input.FilePath] = struct{}{}
 		}
 	}
 

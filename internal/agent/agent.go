@@ -32,8 +32,7 @@ type Agent struct {
 	maxIters   int
 	launchDir  string
 
-	history   []llm.Message
-	readFiles map[string]struct{}
+	history []llm.Message
 
 	skills *skills.Registry
 
@@ -58,7 +57,7 @@ type Options struct {
 
 func New(opts Options) *Agent {
 	if opts.MaxTokens == 0 {
-		opts.MaxTokens = 4096
+		opts.MaxTokens = 32768
 	}
 	if opts.MaxIters == 0 {
 		opts.MaxIters = 50
@@ -81,7 +80,6 @@ func New(opts Options) *Agent {
 		maxTokens:  opts.MaxTokens,
 		maxIters:   opts.MaxIters,
 		launchDir:  opts.LaunchDir,
-		readFiles:  make(map[string]struct{}),
 		skills:     opts.Skills,
 		in:         make(chan submit, 1),
 		history:    []llm.Message{},
@@ -222,7 +220,7 @@ func (a *Agent) LaunchDir() string {
 	return a.launchDir
 }
 
-// Reset clears history and session allowlist (readFiles stays).
+// Reset clears history and session allowlist.
 func (a *Agent) Reset() {
 	a.mu.Lock()
 	defer a.mu.Unlock()
