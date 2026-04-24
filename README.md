@@ -148,6 +148,69 @@ Tool descriptions follow `~/.sam/system/tools/<name>.md` → embedded default.
 Set `$SAM_HOME` to relocate the SAM root (default `~/.sam`); the system
 directory always lives under it.
 
+## Per-Model System Prompts
+
+SAM ships a universal base prompt plus per-family addenda tailored to each
+model's capabilities. The family is resolved from the current model name via
+longest-prefix match and the addendum is appended to the base prompt on every
+model switch.
+
+### Precedence
+
+1. `--system-prompt <file>` / `system_prompt_file` in `config.toml` — total
+   override; family addendum is skipped entirely.
+2. Disk base `~/.sam/system/system-prompt.md` (seeded on first run).
+3. Embedded base.
+
+When the override is not set, the matching family addendum is appended:
+
+4. Disk family `~/.sam/system/prompts/<family>.md`.
+5. Embedded family.
+
+An empty disk family file is treated as an explicit user wipe — no addendum is
+appended and SAM does not fall back to the embedded family content.
+
+### Bundled Families
+
+| Family     | Prefixes                                                  |
+|------------|-----------------------------------------------------------|
+| `claude`   | `claude-opus`, `claude-sonnet`, `claude-haiku`            |
+| `minimax`  | `MiniMax-`                                                |
+| `kimi-k2`  | `kimi-k2`                                                 |
+| `trinity`  | `trinity-`                                                |
+| `gpt`      | `gpt-5`, `gpt-4o`, `gpt-4.1`, `o1`, `o3`, `o4`            |
+| `deepseek` | `deepseek-`                                               |
+
+Longest prefix wins on overlap; ties break lexicographically by family name.
+Prefix match is case-sensitive — declare case variants explicitly.
+
+### Adding a Custom Family
+
+Declare the family prefixes in `config.toml` and drop the addendum file on disk:
+
+```toml
+# ~/.config/sam/config.toml
+[prompt_families.qwen]
+prefixes = ["qwen-", "Qwen", "openrouter/qwen/", "lmstudio-community/qwen"]
+```
+
+Write the content at `~/.sam/system/prompts/qwen.md`. Point SAM at a qwen model
+— the family addendum auto-applies on the next model switch.
+
+Override a bundled family (full replacement of its prefix list):
+
+```toml
+[prompt_families.claude]
+prefixes = ["claude-opus", "claude-sonnet", "claude-haiku", "claude-5"]
+```
+
+Disable a bundled family:
+
+```toml
+[prompt_families.claude]
+prefixes = []
+```
+
 ### Migration from pre-map config
 
 The nested `[providers.minimax]` / `[providers.anthropic]` blocks are still
