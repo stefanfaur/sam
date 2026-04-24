@@ -80,7 +80,7 @@ func DefaultSettings() Settings {
 			Muted:           "#737373",
 			UserBorder:      "#8b5cf6",
 			AssistantFg:     "",
-			ErrorFg:         "#ef4444",
+			ErrorFg:         "#c97d7d",
 			StateThinking:   "#60a5fa",
 			StateResponding: "#34d399",
 			StateTool:       "#fbbf24",

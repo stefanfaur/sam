@@ -17,13 +17,25 @@ import (
 type Event = agent.Event
 
 type pendingTurn struct {
-	events    <-chan Event
-	raw       []rune
-	committed int
-	done      bool
-	skill     *skillCardState
-	thinking  *thinkingCardState
-	tools     []*toolCardState
+	events           <-chan Event
+	raw              []rune
+	committed        int
+	done             bool
+	skill            *skillCardState
+	thinking         *thinkingCardState
+	tools            []*toolCardState
+	cardFlushedSince bool
+}
+
+// padAssistant prepends a blank line to an assistant-text chunk when a
+// thinking or tool card was flushed since the last text chunk, so the
+// assistant reply is visually separated from preceding cards.
+func (pt *pendingTurn) padAssistant(s string) string {
+	if pt.cardFlushedSince {
+		pt.cardFlushedSince = false
+		return "\n" + s
+	}
+	return s
 }
 
 type toolCardState struct {

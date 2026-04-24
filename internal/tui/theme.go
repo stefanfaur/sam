@@ -84,6 +84,7 @@ func (t *Theme) Apply(width int) {
 	t.UserMsg = lipgloss.NewStyle().
 		Border(lipgloss.RoundedBorder(), false, false, false, true).
 		BorderForeground(t.UserBorder).
+		Background(t.subtleBg()).
 		Padding(0, 1).MarginTop(1).Bold(true)
 
 	t.ToolResult = lipgloss.NewStyle().Foreground(t.Muted)

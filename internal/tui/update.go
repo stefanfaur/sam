@@ -589,7 +589,7 @@ func (m *Model) handleAgentEvent(msg agentEventMsg) (tea.Model, tea.Cmd) {
 		idx := m.scanner.SafeSplit(tail)
 		if idx != 0 {
 			prefix := tail[:idx]
-			rendered := safeGlamourRender(m.theme.Glamour(), string(prefix))
+			rendered := m.pending.padAssistant(safeGlamourRender(m.theme.Glamour(), string(prefix)))
 			m.scanner.Advance(prefix)
 			m.pending.committed += idx
 			cmds = append(cmds, tea.Printf("%s", rendered))
@@ -602,7 +602,7 @@ func (m *Model) handleAgentEvent(msg agentEventMsg) (tea.Model, tea.Cmd) {
 		cmds := []tea.Cmd{}
 		if m.pending.committed < len(m.pending.raw) {
 			tail := m.pending.raw[m.pending.committed:]
-			rendered := safeGlamourRender(m.theme.Glamour(), string(tail))
+			rendered := m.pending.padAssistant(safeGlamourRender(m.theme.Glamour(), string(tail)))
 			m.scanner.Advance(tail)
 			m.pending.committed = len(m.pending.raw)
 			cmds = append(cmds, tea.Printf("%s", rendered))
@@ -667,7 +667,7 @@ func (m *Model) handleAgentEvent(msg agentEventMsg) (tea.Model, tea.Cmd) {
 		var flush tea.Cmd
 		if m.pending.committed < len(m.pending.raw) {
 			tail := m.pending.raw[m.pending.committed:]
-			rendered := safeGlamourRender(m.theme.Glamour(), string(tail))
+			rendered := m.pending.padAssistant(safeGlamourRender(m.theme.Glamour(), string(tail)))
 			m.pending.committed = len(m.pending.raw)
 			flush = tea.Printf("%s", rendered)
 		}
@@ -890,6 +890,7 @@ func (m *Model) flushSettledThinking() string {
 		Body: th.Text,
 	})
 	m.pending.thinking = nil
+	m.pending.cardFlushedSince = true
 	return rendered
 }
 
@@ -920,6 +921,7 @@ func (m *Model) flushSettledTool(id string) string {
 			IsError: tc.IsError,
 		})
 		m.pending.tools = append(m.pending.tools[:i], m.pending.tools[i+1:]...)
+		m.pending.cardFlushedSince = true
 		return rendered
 	}
 	return ""
@@ -964,6 +966,9 @@ func (m *Model) flushTurnSettled() []string {
 			Output:  tc.Output,
 			IsError: tc.IsError,
 		})
+	}
+	if len(out) > 0 {
+		m.pending.cardFlushedSince = true
 	}
 	return out
 }
