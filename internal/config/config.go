@@ -52,6 +52,7 @@ type Config struct {
 	MaxIterations    int                      `toml:"max_iterations"`
 	Providers        map[string]ProviderEntry `toml:"providers"`
 	Models           map[string]ModelConfig   `toml:"models"`
+	PromptFamilies   map[string]PromptFamily  `toml:"prompt_families"`
 	TUI              struct {
 		Theme string `toml:"theme"`
 	} `toml:"tui"`
@@ -132,6 +133,7 @@ type rawConfig struct {
 	MaxIterations    int                      `toml:"max_iterations"`
 	Providers        map[string]ProviderEntry `toml:"providers"`
 	Models           map[string]ModelConfig   `toml:"models"`
+	PromptFamilies   map[string]PromptFamily  `toml:"prompt_families"`
 	TUI              struct {
 		Theme string `toml:"theme"`
 	} `toml:"tui"`
@@ -140,10 +142,11 @@ type rawConfig struct {
 
 func Load(over Overrides) (*Config, error) {
 	cfg := &Config{
-		Provider:      "minimax",
-		MaxTokens:     4096,
-		MaxIterations: 50,
-		Providers:     Presets(),
+		Provider:       "minimax",
+		MaxTokens:      4096,
+		MaxIterations:  50,
+		Providers:      Presets(),
+		PromptFamilies: DefaultPromptFamilies(),
 	}
 	cfg.TUI.Theme = "dark"
 	cfg.RTK.Mode = "auto"
@@ -183,6 +186,9 @@ func Load(over Overrides) (*Config, error) {
 		for name, entry := range raw.Providers {
 			entry.Name = name
 			cfg.Providers[name] = entry
+		}
+		for name, fam := range raw.PromptFamilies {
+			cfg.PromptFamilies[name] = fam
 		}
 	}
 
