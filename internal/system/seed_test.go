@@ -217,6 +217,31 @@ func TestSeed_Concurrent(t *testing.T) {
 	}
 }
 
+func TestSeed_CreatesPromptsSubdir(t *testing.T) {
+	dir := t.TempDir()
+	if err := Seed(dir, nil); err != nil {
+		t.Fatalf("seed: %v", err)
+	}
+	for _, family := range []string{"claude", "minimax", "kimi-k2", "trinity", "gpt", "deepseek"} {
+		path := filepath.Join(dir, "prompts", family+".md")
+		b, err := os.ReadFile(path)
+		if err != nil {
+			t.Errorf("%s not seeded: %v", family, err)
+			continue
+		}
+		if len(b) == 0 {
+			t.Errorf("%s seeded empty", family)
+		}
+	}
+	m := readManifest(t, dir)
+	for _, family := range []string{"claude", "minimax", "kimi-k2", "trinity", "gpt", "deepseek"} {
+		key := "prompts/" + family + ".md"
+		if _, ok := m.Hashes[key]; !ok {
+			t.Errorf("manifest missing %q", key)
+		}
+	}
+}
+
 func TestLoadSystemPrompt_MissingAndPresent(t *testing.T) {
 	dir := t.TempDir()
 	s, err := LoadSystemPrompt(dir)
