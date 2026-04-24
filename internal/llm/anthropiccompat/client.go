@@ -123,7 +123,7 @@ func (c *Client) Stream(ctx context.Context, req llm.Request) (<-chan llm.Stream
 
 	maxTokens := req.MaxTokens
 	if maxTokens <= 0 {
-		maxTokens = 4096
+		maxTokens = 32768
 	}
 
 	msgs := BuildMessages(req.Messages)

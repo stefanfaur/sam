@@ -21,7 +21,7 @@ func TestLoadDefaults(t *testing.T) {
 	if cfg.Provider != "minimax" {
 		t.Fatalf("default provider: %s", cfg.Provider)
 	}
-	if cfg.MaxTokens != 4096 {
+	if cfg.MaxTokens != 32768 {
 		t.Fatalf("max_tokens: %d", cfg.MaxTokens)
 	}
 	for _, name := range []string{"minimax", "anthropic", "openai", "arcee", "moonshot"} {

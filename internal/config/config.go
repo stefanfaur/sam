@@ -143,7 +143,7 @@ type rawConfig struct {
 func Load(over Overrides) (*Config, error) {
 	cfg := &Config{
 		Provider:       "minimax",
-		MaxTokens:      4096,
+		MaxTokens:      32768,
 		MaxIterations:  50,
 		Providers:      Presets(),
 		PromptFamilies: DefaultPromptFamilies(),
