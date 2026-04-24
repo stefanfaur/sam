@@ -21,6 +21,9 @@ func (m *Model) applyModelSpec(spec string) tea.Cmd {
 		return m.switchProvider(provider, model)
 	}
 	m.agent.SetModel(model)
+	if m.sysResolveFn != nil {
+		m.agent.SetSystem(m.sysResolveFn(model))
+	}
 	m.status.model = model
 	m.persistSelection()
 	return m.addInfo(fmt.Sprintf("model set to %s/%s", provider, model))
@@ -45,6 +48,9 @@ func (m *Model) switchProvider(name, model string) tea.Cmd {
 	}
 	m.agent.SetProvider(p)
 	m.agent.SetModel(model)
+	if m.sysResolveFn != nil {
+		m.agent.SetSystem(m.sysResolveFn(model))
+	}
 	m.status.provider = name
 	m.status.model = model
 	m.persistSelection()

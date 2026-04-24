@@ -381,6 +381,9 @@ func (m *settingsModal) applyProviders(root *Model) tea.Cmd {
 		}
 		root.agent.SetProvider(p)
 		root.agent.SetModel(model)
+		if root.sysResolveFn != nil {
+			root.agent.SetSystem(root.sysResolveFn(model))
+		}
 		root.status.provider = m.provider
 		root.status.model = model
 		root.persistSelection()
