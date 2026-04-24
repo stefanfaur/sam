@@ -10,7 +10,7 @@ import (
 	"strings"
 )
 
-//go:embed defaults/system-prompt.md defaults/tools/*.md
+//go:embed defaults/system-prompt.md defaults/tools/*.md defaults/prompts/*.md
 var defaultsFS embed.FS
 
 // DefaultDir returns the on-disk system directory. If $SAM_HOME is set,
