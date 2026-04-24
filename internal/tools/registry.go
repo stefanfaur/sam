@@ -3,27 +3,51 @@ package tools
 import (
 	"context"
 	"encoding/json"
+	"fmt"
 	"sync"
 
 	"github.com/stefanfaur/sam/internal/llm"
 )
 
+type typedBase struct {
+	name         string
+	desc         string
+	sch          map[string]any
+	parallelSafe bool
+}
+
 type typed[In any] struct {
-	name string
-	desc string
-	run  func(context.Context, In) (Result, error)
-	sch  map[string]any
+	typedBase
+	run func(context.Context, In) (Result, error)
 }
 
-func New[In any](name, desc string, fn func(context.Context, In) (Result, error)) Tool {
-	return typed[In]{name: name, desc: desc, run: fn, sch: SchemaOf[In]()}
+type Option func(*typedBase)
+
+func ParallelSafe() Option {
+	return func(b *typedBase) { b.parallelSafe = true }
 }
 
-func (t typed[In]) Name() string           { return t.name }
-func (t typed[In]) Description() string    { return t.desc }
-func (t typed[In]) Schema() map[string]any { return t.sch }
+func New[In any](
+	name, desc string,
+	fn func(context.Context, In) (Result, error),
+	opts ...Option,
+) Tool {
+	t := &typed[In]{
+		typedBase: typedBase{name: name, desc: desc, sch: SchemaOf[In]()},
+		run:       fn,
+	}
+	for _, o := range opts {
+		o(&t.typedBase)
+	}
+	return t
+}
 
-func (t typed[In]) Run(ctx context.Context, raw json.RawMessage) (Result, error) {
+func (t *typed[In]) Name() string           { return t.name }
+func (t *typed[In]) Description() string    { return t.desc }
+func (t *typed[In]) Schema() map[string]any { return t.sch }
+func (t *typed[In]) ParallelSafe() bool     { return t.parallelSafe }
+
+func (t *typed[In]) Run(ctx context.Context, raw json.RawMessage) (res Result, err error) {
 	var in In
 	if len(raw) > 0 {
 		if err := json.Unmarshal(raw, &in); err != nil {
@@ -32,7 +56,11 @@ func (t typed[In]) Run(ctx context.Context, raw json.RawMessage) (Result, error)
 	}
 	defer func() {
 		if r := recover(); r != nil {
-			// caught panic - convert to error result
+			res = Result{
+				Output:  fmt.Sprintf("panic in tool %s: %v", t.name, r),
+				IsError: true,
+			}
+			err = nil
 		}
 	}()
 	return t.run(ctx, in)

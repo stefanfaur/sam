@@ -50,7 +50,7 @@ func (r *ReadTracker) Seen(p string) bool {
 func NewRead(tracker *ReadTracker, rtkClient RTKClient, description string) Tool {
 	return New[ReadInput]("Read", description, func(ctx context.Context, in ReadInput) (Result, error) {
 		return runRead(ctx, in, tracker, rtkClient)
-	})
+	}, ParallelSafe())
 }
 
 func runRead(ctx context.Context, in ReadInput, tracker *ReadTracker, rtkClient RTKClient) (Result, error) {

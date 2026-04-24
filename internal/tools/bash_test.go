@@ -39,6 +39,13 @@ func (f *fakeRTK) Read(ctx context.Context, path string) ([]byte, error) {
 	return f.readOut, f.readErr
 }
 
+func TestBashToolIsNotParallelSafe(t *testing.T) {
+	tool := NewBash(t.TempDir(), nil, "")
+	if tool.ParallelSafe() {
+		t.Error("Bash must not be ParallelSafe")
+	}
+}
+
 func TestBashStdout(t *testing.T) {
 	r := runBashTool(t, t.TempDir(), `{"command":"echo hi"}`)
 	if r.IsError {

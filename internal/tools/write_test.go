@@ -7,6 +7,13 @@ import (
 	"testing"
 )
 
+func TestWriteToolIsNotParallelSafe(t *testing.T) {
+	tool := NewWrite(NewReadTracker(), "")
+	if tool.ParallelSafe() {
+		t.Error("Write must not be ParallelSafe")
+	}
+}
+
 func TestWriteRelativePath(t *testing.T) {
 	tool := NewWrite(NewReadTracker(), "test")
 	r, _ := tool.Run(context.Background(), []byte(`{"file_path":"rel.txt","content":"x"}`))

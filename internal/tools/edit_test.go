@@ -18,6 +18,13 @@ func editSetup(t *testing.T, body string) (string, *ReadTracker) {
 	return p, tr
 }
 
+func TestEditToolIsNotParallelSafe(t *testing.T) {
+	tool := NewEdit(NewReadTracker(), "")
+	if tool.ParallelSafe() {
+		t.Error("Edit must not be ParallelSafe")
+	}
+}
+
 func TestEditRequiresRead(t *testing.T) {
 	p := filepath.Join(t.TempDir(), "f.txt")
 	_ = os.WriteFile(p, []byte("hi"), 0644)

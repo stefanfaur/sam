@@ -9,6 +9,13 @@ import (
 	"testing"
 )
 
+func TestReadToolIsParallelSafe(t *testing.T) {
+	tool := NewRead(NewReadTracker(), nil, "")
+	if !tool.ParallelSafe() {
+		t.Error("Read must be ParallelSafe")
+	}
+}
+
 func TestReadRelativePath(t *testing.T) {
 	tracker := NewReadTracker()
 	tool := NewRead(tracker, nil, "test")

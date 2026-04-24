@@ -10,6 +10,7 @@ type Tool interface {
 	Description() string
 	Schema() map[string]any
 	Run(ctx context.Context, raw json.RawMessage) (Result, error)
+	ParallelSafe() bool
 }
 
 type Result struct {
