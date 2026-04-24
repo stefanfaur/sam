@@ -125,3 +125,86 @@ prefixes = []
 		t.Fatalf("disable-by-empty failed: %v", got)
 	}
 }
+
+func TestFamilyForModel_BundledDefaults(t *testing.T) {
+	cfg := &Config{PromptFamilies: DefaultPromptFamilies()}
+	cases := map[string]string{
+		"MiniMax-M2.7":           "minimax",
+		"claude-sonnet-4-5":      "claude",
+		"claude-opus-4-7":        "claude",
+		"claude-haiku-4-5":       "claude",
+		"kimi-k2.6":              "kimi-k2",
+		"kimi-k2.5":              "kimi-k2",
+		"trinity-large-thinking": "trinity",
+		"gpt-4o-mini":            "gpt",
+		"gpt-5":                  "gpt",
+		"o1-preview":             "gpt",
+		"deepseek-r1":            "deepseek",
+	}
+	for model, want := range cases {
+		if got := cfg.FamilyForModel(model); got != want {
+			t.Errorf("FamilyForModel(%q) = %q, want %q", model, got, want)
+		}
+	}
+}
+
+func TestFamilyForModel_LongestPrefix(t *testing.T) {
+	cfg := &Config{PromptFamilies: map[string]PromptFamily{
+		"kimi":    {Prefixes: []string{"kimi-"}},
+		"kimi-k2": {Prefixes: []string{"kimi-k2"}},
+	}}
+	if got := cfg.FamilyForModel("kimi-k2.6"); got != "kimi-k2" {
+		t.Fatalf("longest-prefix lost: got %q", got)
+	}
+	if got := cfg.FamilyForModel("kimi-k1.5"); got != "kimi" {
+		t.Fatalf("shorter prefix expected: got %q", got)
+	}
+}
+
+func TestFamilyForModel_TieBreakLexAsc(t *testing.T) {
+	cfg := &Config{PromptFamilies: map[string]PromptFamily{
+		"zeta":  {Prefixes: []string{"shared-"}},
+		"alpha": {Prefixes: []string{"shared-"}},
+	}}
+	if got := cfg.FamilyForModel("shared-model"); got != "alpha" {
+		t.Fatalf("tie-break lex-asc lost: got %q", got)
+	}
+}
+
+func TestFamilyForModel_NoMatch(t *testing.T) {
+	cfg := &Config{PromptFamilies: DefaultPromptFamilies()}
+	if got := cfg.FamilyForModel("random-model-x"); got != "" {
+		t.Fatalf("expected empty for unknown: got %q", got)
+	}
+}
+
+func TestFamilyForModel_EmptyPrefixesSkipped(t *testing.T) {
+	cfg := &Config{PromptFamilies: map[string]PromptFamily{
+		"claude": {Prefixes: []string{}},
+	}}
+	if got := cfg.FamilyForModel(""); got != "" {
+		t.Errorf("empty prefixes matched empty model: %q", got)
+	}
+	if got := cfg.FamilyForModel("claude-sonnet-4-5"); got != "" {
+		t.Errorf("empty prefixes matched model: %q", got)
+	}
+}
+
+func TestFamilyForModel_CaseSensitive(t *testing.T) {
+	cfg := &Config{PromptFamilies: map[string]PromptFamily{
+		"qwen": {Prefixes: []string{"qwen-"}},
+	}}
+	if got := cfg.FamilyForModel("Qwen-72B"); got != "" {
+		t.Fatalf("unexpected case-insensitive match: %q", got)
+	}
+	if got := cfg.FamilyForModel("qwen-72b"); got != "qwen" {
+		t.Fatalf("case-sensitive match lost: %q", got)
+	}
+}
+
+func TestFamilyForModel_NilMap(t *testing.T) {
+	cfg := &Config{}
+	if got := cfg.FamilyForModel("claude-sonnet-4-5"); got != "" {
+		t.Fatalf("nil map should yield empty: %q", got)
+	}
+}
