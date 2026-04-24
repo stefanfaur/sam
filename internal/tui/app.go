@@ -104,6 +104,7 @@ type Model struct {
 	ring          *logging.Ring
 	factory       ProviderFactory
 	ctxWinFn      func(model string) int
+	sysResolveFn  func(model string) string
 	providers     map[string]config.ProviderEntry
 	suggest       suggestState
 	lastCtrlC     time.Time
@@ -203,12 +204,13 @@ type debugModel struct {
 }
 
 type Options struct {
-	Provider        string
-	Model           string
-	MaxIter         int
-	ProviderFactory ProviderFactory
-	ContextWindowFn func(model string) int
-	Providers       map[string]config.ProviderEntry
+	Provider         string
+	Model            string
+	MaxIter          int
+	ProviderFactory  ProviderFactory
+	ContextWindowFn  func(model string) int
+	SystemResolverFn func(model string) string
+	Providers        map[string]config.ProviderEntry
 }
 
 func New(a *agent.Agent, ring *logging.Ring, opts Options) *Model {
@@ -264,8 +266,9 @@ func New(a *agent.Agent, ring *logging.Ring, opts Options) *Model {
 			maxIter:  opts.MaxIter,
 		},
 		debug:     debugModel{viewport: viewport.New(80, 20), ring: ring, theme: theme},
-		factory:   opts.ProviderFactory,
-		ctxWinFn:  opts.ContextWindowFn,
-		providers: opts.Providers,
+		factory:      opts.ProviderFactory,
+		ctxWinFn:     opts.ContextWindowFn,
+		sysResolveFn: opts.SystemResolverFn,
+		providers:    opts.Providers,
 	}
 }

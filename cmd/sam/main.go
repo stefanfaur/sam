@@ -196,7 +196,10 @@ func runTUI(ctx context.Context, cfg *config.Config, sysDir string, logger *slog
 			return buildProvider(cfg, name, modelName)
 		},
 		ContextWindowFn: cfg.ModelContextWindow,
-		Providers:       cfg.Providers,
+		SystemResolverFn: func(m string) string {
+			return resolveSystemPrompt(cfg, sysDir, m, logger)
+		},
+		Providers: cfg.Providers,
 	})
 	model.SetSkills(skillReg)
 	prog := tea.NewProgram(model, tea.WithContext(ctx))
