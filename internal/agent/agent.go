@@ -256,6 +256,16 @@ func (a *Agent) SetProvider(p llm.Provider) {
 	a.provider = p
 }
 
+// SetSystem swaps the base system prompt and rebuilds the effective prompt
+// (base + skill catalog, when the auto-invoke gate is on) for subsequent
+// turns. Safe to call concurrently with turn execution.
+func (a *Agent) SetSystem(s string) {
+	a.mu.Lock()
+	a.baseSystem = s
+	a.mu.Unlock()
+	a.RebuildSkillCatalog()
+}
+
 // Provider returns the current provider name.
 func (a *Agent) ProviderName() string {
 	a.mu.Lock()
