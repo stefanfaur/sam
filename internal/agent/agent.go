@@ -19,6 +19,19 @@ type submit struct {
 	ctx     context.Context
 }
 
+// CancelMode is the scope of a cancel request.
+type CancelMode int
+
+const (
+	// CancelModeGranular cancels the current dispatch unit (single tool, parallel
+	// group, LLM stream, or approval prompt) but keeps the turn alive so the
+	// next iteration can continue with synthetic cancelled results.
+	CancelModeGranular CancelMode = iota
+	// CancelModeAbort tears down the entire turn. No further LLM calls are made;
+	// pending tools receive synthetic cancelled results.
+	CancelModeAbort
+)
+
 // Agent orchestrates LLM calls with tool execution
 type Agent struct {
 	provider          llm.Provider
@@ -38,8 +51,9 @@ type Agent struct {
 	skills *skills.Registry
 
 	in         chan submit
-	mu         sync.Mutex // protects cancelTurn + system/catalog + skills pointer
+	mu         sync.Mutex // protects cancelTurn + system/catalog + skills pointer + cancelMode
 	cancelTurn context.CancelFunc
+	cancelMode CancelMode
 	log        *slog.Logger
 }
 
@@ -209,13 +223,22 @@ func (a *Agent) Submit(ctx context.Context, userMsg string) <-chan Event {
 	return out
 }
 
-// CancelCurrent cancels the currently executing turn
-func (a *Agent) CancelCurrent() {
+// CancelTurn cancels the currently executing turn with the given scope.
+// Granular keeps the turn alive (loop continues with synthetic cancelled
+// results); Abort tears the whole turn down.
+func (a *Agent) CancelTurn(mode CancelMode) {
 	a.mu.Lock()
 	defer a.mu.Unlock()
 	if a.cancelTurn != nil {
+		a.cancelMode = mode
 		a.cancelTurn()
 	}
+}
+
+// CancelCurrent is a thin wrapper around CancelTurn(CancelModeGranular) kept
+// for backward compatibility with callers that pre-date the mode split.
+func (a *Agent) CancelCurrent() {
+	a.CancelTurn(CancelModeGranular)
 }
 
 // LaunchDir returns the directory the agent was launched from
@@ -287,12 +310,11 @@ func (a *Agent) ProviderName() string {
 
 func (a *Agent) run() {
 	for s := range a.in {
-		ctx, cancel := context.WithCancel(s.ctx)
 		a.mu.Lock()
-		a.cancelTurn = cancel
+		a.cancelMode = CancelModeGranular
 		a.mu.Unlock()
 
-		a.turn(ctx, s)
+		a.turn(s.ctx, s)
 
 		a.mu.Lock()
 		a.cancelTurn = nil

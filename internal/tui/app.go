@@ -106,9 +106,11 @@ type Model struct {
 	ctxWinFn      func(model string) int
 	sysResolveFn  func(model string) string
 	providers     map[string]config.ProviderEntry
-	suggest       suggestState
-	lastCtrlC     time.Time
-	scanner       *blockScanner
+	suggest         suggestState
+	lastCtrlC       time.Time
+	lastEscTime     time.Time
+	escDoubleWindow time.Duration
+	scanner         *blockScanner
 	skills            *skills.Registry
 	recentInvokes     []skillInvocation
 	recentTools       []toolInvocation
@@ -252,13 +254,14 @@ func New(a *agent.Agent, ring *logging.Ring, opts Options) *Model {
 	}
 
 	return &Model{
-		agent:    a,
-		input:    ta,
-		settings: settings,
-		theme:    theme,
-		git:      probeGit(a.LaunchDir()),
-		ring:     ring,
-		scanner:  &blockScanner{},
+		agent:           a,
+		input:           ta,
+		settings:        settings,
+		theme:           theme,
+		git:             probeGit(a.LaunchDir()),
+		ring:            ring,
+		scanner:         &blockScanner{},
+		escDoubleWindow: 500 * time.Millisecond,
 		status: statusbarModel{
 			provider: opts.Provider,
 			model:    opts.Model,

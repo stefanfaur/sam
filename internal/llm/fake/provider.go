@@ -14,6 +14,9 @@ type Provider struct {
 	scripts []Script
 	callIdx int
 	Calls   []llm.Request
+	// StreamFn, when set, takes precedence over scripts. Tests use it to wait
+	// on ctx cancellation mid-stream or emit events conditionally on call index.
+	StreamFn func(ctx context.Context, req llm.Request) (<-chan llm.StreamEvent, error)
 }
 
 func New(scripts ...Script) *Provider {
@@ -35,6 +38,10 @@ func (p *Provider) LastSystem() string {
 
 func (p *Provider) Stream(ctx context.Context, req llm.Request) (<-chan llm.StreamEvent, error) {
 	p.Calls = append(p.Calls, req)
+	if p.StreamFn != nil {
+		p.callIdx++
+		return p.StreamFn(ctx, req)
+	}
 	if p.callIdx >= len(p.scripts) {
 		// No more scripts - return empty or error stream
 		ch := make(chan llm.StreamEvent)

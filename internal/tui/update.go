@@ -225,10 +225,43 @@ func (m *Model) handleKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 		return m, tea.ExitAltScreen
 
 	case tea.KeyEsc:
+		// Suggestion menu dismissal beats cancel routing.
 		if m.suggest.active {
 			m.suggest.active = false
 			return m, nil
 		}
+		// Approval prompt: let it consume the key (it has its own Esc handling).
+		if m.approval != nil {
+			return m, m.approval.Update(msg)
+		}
+		now := time.Now()
+		if m.pending != nil {
+			window := m.escDoubleWindow
+			if window <= 0 {
+				window = 500 * time.Millisecond
+			}
+			if !m.lastEscTime.IsZero() && now.Sub(m.lastEscTime) < window {
+				// Esc-Esc within window: abort the whole turn.
+				m.agent.CancelTurn(agent.CancelModeAbort)
+				m.lastEscTime = time.Time{}
+				m.status.state = "cancelling"
+				return m, nil
+			}
+			// Single Esc with a turn live: cancel the current dispatch unit.
+			m.agent.CancelTurn(agent.CancelModeGranular)
+			m.lastEscTime = now
+			return m, nil
+		}
+		// Idle: clear a non-empty input draft on the first Esc.
+		if m.input.Value() != "" {
+			m.input.Reset()
+			m.adjustInputHeight()
+			m.lastEscTime = now
+			return m, nil
+		}
+		// Idle empty input: reserved for future double-Esc semantics.
+		m.lastEscTime = now
+		return m, nil
 
 	case tea.KeyUp:
 		if m.suggest.active {

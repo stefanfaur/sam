@@ -3,6 +3,7 @@ package agent
 import (
 	"context"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"strings"
 	"sync"
@@ -17,12 +18,21 @@ import (
 // 8 covers typical fan-out without a config knob.
 var parallelToolSem = make(chan struct{}, 8)
 
-func (a *Agent) turn(ctx context.Context, s submit) {
+func (a *Agent) turn(parentCtx context.Context, s submit) {
 	// Add user message to history
 	a.history = append(a.history, llm.Message{
 		Role:    llm.RoleUser,
 		Content: []llm.ContentBlock{{Type: llm.ContentText, Text: s.userMsg}},
 	})
+
+	// Per-turn cancel context. On a granular cancel during tool dispatch we
+	// install a fresh derived context so the next iteration can run; on abort
+	// we exit and the deferred cancel cleans up.
+	ctx, cancel := context.WithCancel(parentCtx)
+	a.mu.Lock()
+	a.cancelTurn = cancel
+	a.mu.Unlock()
+	defer func() { cancel() }()
 
 	for i := 0; i < a.maxIters; i++ {
 		a.mu.Lock()
@@ -64,6 +74,13 @@ func (a *Agent) turn(ctx context.Context, s submit) {
 			a.history = append(a.history, asst)
 		}
 		if err != nil {
+			// Stream cancelled (single Esc or Esc-Esc during streaming):
+			// terminate the turn cleanly. There are no completed tool_uses to
+			// dispatch — they were stripped above to keep history wire-valid.
+			if errors.Is(err, context.Canceled) {
+				emitToChan(s.out, TurnDone{StopReason: "cancelled"}, s.ctx)
+				return
+			}
 			emitToChan(s.out, ErrorEvent{Err: err}, s.ctx)
 			return
 		}
@@ -73,16 +90,44 @@ func (a *Agent) turn(ctx context.Context, s submit) {
 			return
 		}
 
+		// If the user aborted before we got to dispatch, synthesize cancelled
+		// results for every pending call and exit. Granular cancel that
+		// arrives at this exact boundary falls through to the dispatch loop
+		// where individual tools will observe ctx.Err() and return cancelled.
+		a.mu.Lock()
+		preDispatchMode := a.cancelMode
+		a.mu.Unlock()
+		if preDispatchMode == CancelModeAbort && ctx.Err() != nil {
+			results := make([]llm.ContentBlock, len(pending))
+			for idx, call := range pending {
+				results[idx] = llm.ContentBlock{
+					Type:      llm.ContentToolResult,
+					ToolUseID: call.ID,
+					Output:    a.cancelledResult(),
+					IsError:   true,
+				}
+				emitToChan(s.out, ToolResult{
+					ID:      call.ID,
+					Name:    call.Name,
+					Output:  a.cancelledResult(),
+					IsError: true,
+				}, s.ctx)
+			}
+			a.history = append(a.history, llm.Message{Role: llm.RoleUser, Content: results})
+			emitToChan(s.out, TurnDone{StopReason: "cancelled"}, s.ctx)
+			return
+		}
+
 		results := make([]llm.ContentBlock, len(pending))
-		i := 0
-		for i < len(pending) {
-			headTool, _ := a.tools.Get(pending[i].Name)
+		di := 0
+		for di < len(pending) {
+			headTool, _ := a.tools.Get(pending[di].Name)
 			if headTool == nil || !headTool.ParallelSafe() {
-				results[i] = a.execOne(ctx, s, pending[i])
-				i++
+				results[di] = a.execOne(ctx, s, pending[di])
+				di++
 				continue
 			}
-			j := i + 1
+			j := di + 1
 			for j < len(pending) {
 				t, _ := a.tools.Get(pending[j].Name)
 				if t == nil || !t.ParallelSafe() {
@@ -90,15 +135,33 @@ func (a *Agent) turn(ctx context.Context, s submit) {
 				}
 				j++
 			}
-			a.execParallelGroup(ctx, s, pending[i:j], results[i:j])
-			i = j
+			a.execParallelGroup(ctx, s, pending[di:j], results[di:j])
+			di = j
 		}
 
 		a.history = append(a.history, llm.Message{Role: llm.RoleUser, Content: results})
 
-		if s.ctx.Err() != nil {
-			emitToChan(s.out, ErrorEvent{Err: s.ctx.Err()}, s.ctx)
-			return
+		if ctx.Err() != nil {
+			a.mu.Lock()
+			mode := a.cancelMode
+			a.mu.Unlock()
+			if mode == CancelModeAbort {
+				emitToChan(s.out, TurnDone{StopReason: "cancelled"}, s.ctx)
+				return
+			}
+			// Granular: refresh the cancel context so the next iteration runs.
+			// The cancelled tool's synthetic result is already in history; the
+			// model gets to react to it.
+			cancel()
+			ctx, cancel = context.WithCancel(parentCtx)
+			a.mu.Lock()
+			a.cancelTurn = cancel
+			a.cancelMode = CancelModeGranular
+			a.mu.Unlock()
+			if parentCtx.Err() != nil {
+				emitToChan(s.out, ErrorEvent{Err: parentCtx.Err()}, s.ctx)
+				return
+			}
 		}
 	}
 
@@ -205,8 +268,24 @@ func (a *Agent) consumeStream(ctx context.Context, req llm.Request, out chan Eve
 		}
 	}
 
-	// Channel closed without message_stop
-	if reqCtx.Err() != nil {
+	// Channel closed without message_stop. If the per-iteration context was
+	// cancelled mid-tool_use, drop the unterminated block so it never lands
+	// in history (an orphan tool_use without a matching tool_result is a
+	// wire-format error on strict providers like DeepSeek).
+	if ctx.Err() != nil || reqCtx.Err() != nil {
+		if currentTool.active && currentTool.id != "" {
+			filtered := msg.Content[:0]
+			for _, b := range msg.Content {
+				if b.Type == llm.ContentToolUse && b.ToolUseID == currentTool.id {
+					continue
+				}
+				filtered = append(filtered, b)
+			}
+			msg.Content = filtered
+		}
+		if ctx.Err() != nil {
+			return msg, pending, "", ctx.Err()
+		}
 		return msg, pending, "", reqCtx.Err()
 	}
 	return msg, pending, "", fmt.Errorf("stream closed prematurely")
