@@ -1,0 +1,66 @@
+{
+  "planPath": "thoughts/shared/plans/rtk-integration/2026-04-23-rtk-implementation.md",
+  "tasks": [
+    {
+      "id": 0,
+      "subject": "Task 0: Create internal/rtk package with Client, Mode constants, Detect, Rewrite, Read methods",
+      "status": "pending",
+      "blockedBy": []
+    },
+    {
+      "id": 1,
+      "subject": "Task 1: Update internal/tools/bash.go with Raw field and rtk integration",
+      "status": "pending",
+      "blockedBy": [0]
+    },
+    {
+      "id": 2,
+      "subject": "Task 2: Update internal/tools/read.go with Raw field and rtk integration",
+      "status": "pending",
+      "blockedBy": [0]
+    },
+    {
+      "id": 3,
+      "subject": "Task 3: Update internal/config/config.go to support [rtk] block",
+      "status": "pending",
+      "blockedBy": []
+    },
+    {
+      "id": 4,
+      "subject": "Task 4: Wire rtk client in cmd/sam/main.go and update tool constructors",
+      "status": "pending",
+      "blockedBy": [0, 1, 2, 3]
+    },
+    {
+      "id": 5,
+      "subject": "Task 5: Update TUI render.go to display rewritten command subline for Bash",
+      "status": "pending",
+      "blockedBy": [1]
+    },
+    {
+      "id": 6,
+      "subject": "Task 6: Update README.md with [rtk] section, raw escape hatch, and approval behavior",
+      "status": "pending",
+      "blockedBy": [3, 4]
+    },
+    {
+      "id": 7,
+      "subject": "Task 7: Test-driven fixes and edge cases",
+      "status": "pending",
+      "blockedBy": [0, 1, 2]
+    },
+    {
+      "id": 8,
+      "subject": "Task 8: Configuration validation and error handling",
+      "status": "pending",
+      "blockedBy": [3, 4]
+    },
+    {
+      "id": 9,
+      "subject": "Task 9: Integration test and manual verification",
+      "status": "pending",
+      "blockedBy": [0, 1, 2, 3, 4, 5, 6, 7, 8]
+    }
+  ],
+  "lastUpdated": "2026-04-23T12:00:00Z"
+}
