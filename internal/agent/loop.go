@@ -25,16 +25,42 @@ func (a *Agent) turn(ctx context.Context, s submit) {
 	})
 
 	for i := 0; i < a.maxIters; i++ {
+		a.mu.Lock()
+		model := a.model
+		resolver := a.maxTokensResolver
+		maxTokens := a.maxTokens
+		a.mu.Unlock()
+		if resolver != nil {
+			if v := resolver(model); v > 0 {
+				maxTokens = v
+			}
+		}
 		req := llm.Request{
-			Model:     a.model,
+			Model:     model,
 			System:    a.system,
 			Messages:  a.history,
 			Tools:     a.tools.Defs(),
-			MaxTokens: a.maxTokens,
+			MaxTokens: maxTokens,
 		}
 
 		asst, pending, stop, err := a.consumeStream(ctx, req, s.out, s.ctx)
-		if asst.Role != "" {
+		// Only remember assistant turns that actually produced content.
+		// Cancelled-before-any-block turns leave asst.Role set but
+		// asst.Content empty — appending them breaks the next wire call
+		// on providers that reject empty-content messages (DeepSeek).
+		// On error before tool dispatch, also strip tool_use blocks so
+		// we don't leave orphan tool_use ids without matching
+		// tool_result follow-ups (also rejected by DeepSeek).
+		if err != nil && len(asst.Content) > 0 {
+			filtered := asst.Content[:0]
+			for _, b := range asst.Content {
+				if b.Type != llm.ContentToolUse {
+					filtered = append(filtered, b)
+				}
+			}
+			asst.Content = filtered
+		}
+		if asst.Role != "" && len(asst.Content) > 0 {
 			a.history = append(a.history, asst)
 		}
 		if err != nil {

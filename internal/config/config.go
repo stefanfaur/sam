@@ -38,6 +38,7 @@ type ModelConfig struct {
 	ContextWindow        int    `toml:"context_window"`
 	ReasoningEffort      string `toml:"reasoning_effort"`
 	ThinkingBudgetTokens *int   `toml:"thinking_budget_tokens"`
+	MaxTokens            int    `toml:"max_tokens"`
 }
 
 type RTKConfig struct {
@@ -81,9 +82,8 @@ func (c *Config) ModelContextWindow(name string) int {
 	case strings.HasPrefix(name, "gpt-4o"),
 		strings.HasPrefix(name, "gpt-4.1"):
 		return 128_000
-	case strings.HasPrefix(name, "deepseek-r"),
-		strings.HasPrefix(name, "deepseek-v3"):
-		return 131_072
+	case strings.HasPrefix(name, "deepseek-v4"):
+		return 1_000_000
 	case strings.HasPrefix(name, "trinity-"):
 		return 512_000
 	case strings.HasPrefix(name, "kimi-k2"):
@@ -112,6 +112,21 @@ func (c *Config) ModelThinkingBudget(name string) int {
 	switch {
 	case strings.HasPrefix(name, "MiniMax-"):
 		return 32_000
+	case strings.HasPrefix(name, "deepseek-v4"):
+		return 120_000
+	}
+	return 0
+}
+
+// ModelMaxTokens returns the per-model output budget. Explicit user
+// config wins; otherwise family defaults apply. Returns 0 when no
+// family default exists so callers fall back to the global MaxTokens.
+func (c *Config) ModelMaxTokens(name string) int {
+	if m, ok := c.Models[name]; ok && m.MaxTokens > 0 {
+		return m.MaxTokens
+	}
+	if strings.HasPrefix(name, "deepseek-v4") {
+		return 192_000
 	}
 	return 0
 }

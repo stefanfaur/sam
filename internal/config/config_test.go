@@ -235,6 +235,8 @@ func TestModelThinkingBudgetDefaults(t *testing.T) {
 		"claude-sonnet-4-5":        0,
 		"trinity-large-thinking":   0,
 		"gpt-4o":                   0,
+		"deepseek-v4-pro":          120_000,
+		"deepseek-v4-flash":        120_000,
 	}
 	for model, want := range cases {
 		if got := cfg.ModelThinkingBudget(model); got != want {
@@ -258,6 +260,25 @@ func TestModelThinkingBudgetExplicitOverride(t *testing.T) {
 	}
 }
 
+func TestModelMaxTokens(t *testing.T) {
+	cfg := &Config{}
+	if got := cfg.ModelMaxTokens("deepseek-v4-pro"); got != 192_000 {
+		t.Fatalf("pro: got %d want 192000", got)
+	}
+	if got := cfg.ModelMaxTokens("deepseek-v4-flash"); got != 192_000 {
+		t.Fatalf("flash: got %d want 192000", got)
+	}
+	if got := cfg.ModelMaxTokens("claude-sonnet-4-5"); got != 0 {
+		t.Fatalf("unknown: got %d want 0", got)
+	}
+	cfg.Models = map[string]ModelConfig{
+		"deepseek-v4-pro": {MaxTokens: 64_000},
+	}
+	if got := cfg.ModelMaxTokens("deepseek-v4-pro"); got != 64_000 {
+		t.Fatalf("override: got %d want 64000", got)
+	}
+}
+
 func TestContextWindowPrefixRules(t *testing.T) {
 	cfg := &Config{}
 	cases := map[string]int{
@@ -267,8 +288,8 @@ func TestContextWindowPrefixRules(t *testing.T) {
 		"o4-mini":                400_000,
 		"gpt-4o":                 128_000,
 		"gpt-4.1-mini":           128_000,
-		"deepseek-r1":            131_072,
-		"deepseek-v3":            131_072,
+		"deepseek-v4-pro":        1_000_000,
+		"deepseek-v4-flash":      1_000_000,
 		"trinity-large-thinking": 512_000,
 		"claude-sonnet-4-5":      200_000,
 		"MiniMax-M2.7":           1_000_000,

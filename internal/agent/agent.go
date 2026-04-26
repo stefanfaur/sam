@@ -21,16 +21,17 @@ type submit struct {
 
 // Agent orchestrates LLM calls with tool execution
 type Agent struct {
-	provider   llm.Provider
-	tools      *tools.Registry
-	policy     *policy.Policy
-	baseSystem string
-	system     string
-	catalog    string
-	model      string
-	maxTokens  int
-	maxIters   int
-	launchDir  string
+	provider          llm.Provider
+	tools             *tools.Registry
+	policy            *policy.Policy
+	baseSystem        string
+	system            string
+	catalog           string
+	model             string
+	maxTokens         int
+	maxTokensResolver func(string) int
+	maxIters          int
+	launchDir         string
 
 	history []llm.Message
 
@@ -43,16 +44,17 @@ type Agent struct {
 }
 
 type Options struct {
-	Provider  llm.Provider
-	Tools     *tools.Registry
-	Policy    *policy.Policy
-	System    string
-	Model     string
-	MaxTokens int
-	MaxIters  int
-	LaunchDir string
-	Logger    *slog.Logger
-	Skills    *skills.Registry
+	Provider            llm.Provider
+	Tools               *tools.Registry
+	Policy              *policy.Policy
+	System              string
+	Model               string
+	MaxTokens           int
+	MaxTokensResolverFn func(model string) int
+	MaxIters            int
+	LaunchDir           string
+	Logger              *slog.Logger
+	Skills              *skills.Registry
 }
 
 func New(opts Options) *Agent {
@@ -71,19 +73,20 @@ func New(opts Options) *Agent {
 	}
 
 	a := &Agent{
-		provider:   opts.Provider,
-		tools:      opts.Tools,
-		policy:     opts.Policy,
-		baseSystem: opts.System,
-		system:     opts.System,
-		model:      opts.Model,
-		maxTokens:  opts.MaxTokens,
-		maxIters:   opts.MaxIters,
-		launchDir:  opts.LaunchDir,
-		skills:     opts.Skills,
-		in:         make(chan submit, 1),
-		history:    []llm.Message{},
-		log:        opts.Logger,
+		provider:          opts.Provider,
+		tools:             opts.Tools,
+		policy:            opts.Policy,
+		baseSystem:        opts.System,
+		system:            opts.System,
+		model:             opts.Model,
+		maxTokens:         opts.MaxTokens,
+		maxTokensResolver: opts.MaxTokensResolverFn,
+		maxIters:          opts.MaxIters,
+		launchDir:         opts.LaunchDir,
+		skills:            opts.Skills,
+		in:                make(chan submit, 1),
+		history:           []llm.Message{},
+		log:               opts.Logger,
 	}
 	a.RebuildSkillCatalog()
 	return a
@@ -228,6 +231,14 @@ func (a *Agent) Reset() {
 	if a.policy != nil {
 		a.policy.ResetSession()
 	}
+}
+
+// ClearHistory drops conversation history while preserving the session
+// allowlist. Use for /clear; use Reset for a full reset.
+func (a *Agent) ClearHistory() {
+	a.mu.Lock()
+	defer a.mu.Unlock()
+	a.history = []llm.Message{}
 }
 
 // SetModel updates the model used for subsequent turns.

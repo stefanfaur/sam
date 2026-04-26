@@ -174,16 +174,17 @@ func runTUI(ctx context.Context, cfg *config.Config, sysDir string, logger *slog
 	skillReg := buildSkillsRegistry(cwd, logger)
 
 	a := agent.New(agent.Options{
-		Provider:  prov,
-		Tools:     registry,
-		Policy:    pol,
-		System:    sys,
-		Model:     cfg.Model,
-		MaxIters:  cfg.MaxIterations,
-		MaxTokens: cfg.MaxTokens,
-		LaunchDir: cwd,
-		Logger:    logger,
-		Skills:    skillReg,
+		Provider:            prov,
+		Tools:               registry,
+		Policy:              pol,
+		System:              sys,
+		Model:               cfg.Model,
+		MaxIters:            cfg.MaxIterations,
+		MaxTokens:           cfg.MaxTokens,
+		MaxTokensResolverFn: cfg.ModelMaxTokens,
+		LaunchDir:           cwd,
+		Logger:              logger,
+		Skills:              skillReg,
 	})
 	a.Start()
 	defer a.Close()
@@ -240,15 +241,16 @@ func runAgentOneShot(ctx context.Context, cfg *config.Config, sysDir, prompt str
 	sys := resolveSystemPrompt(cfg, sysDir, cfg.Model, logger)
 
 	a := agent.New(agent.Options{
-		Provider:  prov,
-		Tools:     registry,
-		Policy:    pol,
-		System:    sys,
-		Model:     cfg.Model,
-		MaxIters:  cfg.MaxIterations,
-		MaxTokens: cfg.MaxTokens,
-		LaunchDir: cwd,
-		Logger:    logger,
+		Provider:            prov,
+		Tools:               registry,
+		Policy:              pol,
+		System:              sys,
+		Model:               cfg.Model,
+		MaxIters:            cfg.MaxIterations,
+		MaxTokens:           cfg.MaxTokens,
+		MaxTokensResolverFn: cfg.ModelMaxTokens,
+		LaunchDir:           cwd,
+		Logger:              logger,
 	})
 	a.Start()
 	defer a.Close()

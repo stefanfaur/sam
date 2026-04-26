@@ -24,10 +24,14 @@ SAM reads configuration from `~/.config/sam/config.toml` (or `$XDG_CONFIG_HOME/s
 
 ### Providers
 
-SAM ships five bundled provider presets — `minimax`, `anthropic`, `openai`,
-`arcee`, `moonshot` — and accepts arbitrary user-defined entries keyed by
-name. Each entry declares its `wire` (`anthropic` or `openai`) plus the env
-var holding its API key.
+SAM ships six bundled provider presets — `minimax`, `anthropic`, `openai`,
+`arcee`, `moonshot`, `deepseek` — and accepts arbitrary user-defined entries
+keyed by name. Each entry declares its `wire` (`anthropic` or `openai`) plus
+the env var holding its API key.
+
+**DeepSeek v4:** 1M context, 192k `max_tokens`, 120k thinking budget by
+default. Override per-model under `[models.<name>]` (e.g.
+`max_tokens = 64000`).
 
 ### Example config.toml
 
@@ -98,6 +102,7 @@ anthropic = "..."
 openai    = "sk-..."
 arcee     = "..."
 moonshot  = "sk-..."
+deepseek  = "sk-..."
 ```
 
 On startup each entry's `api_key_env` is set from `[api_keys].<name>` unless the
@@ -112,6 +117,7 @@ env var is already set in the environment.
 | `OPENAI_API_KEY`     | OpenAI preset (gpt-4o, gpt-5, o-series) |
 | `ARCEE_API_KEY`      | Arcee Conductor preset (trinity-large-thinking) |
 | `KIMI_API_KEY`       | Moonshot AI preset (kimi-k2.6, kimi-k2.5) |
+| `DEEPSEEK_API_KEY`   | DeepSeek preset (deepseek-v4-pro, deepseek-v4-flash) |
 | `SAM_PROVIDER`       | Override default provider (accepts any preset or user-defined key) |
 | `SAM_MODEL`          | Override default model (bare or `provider/model`) |
 | `XDG_CONFIG_HOME`    | Override config directory |

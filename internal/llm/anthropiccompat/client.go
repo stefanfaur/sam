@@ -50,6 +50,13 @@ func BuildMessages(in []llm.Message) []anthropic.MessageParam {
 				))
 			}
 		}
+		// Skip messages whose blocks filtered to empty (e.g. an
+		// assistant turn that streamed only unsigned thinking before
+		// being cancelled). Forwarding an empty-content message trips
+		// strict validators like DeepSeek's /anthropic proxy.
+		if len(blocks) == 0 {
+			continue
+		}
 		if msg.Role == llm.RoleAssistant {
 			out = append(out, anthropic.NewAssistantMessage(blocks...))
 		} else {
@@ -61,7 +68,10 @@ func BuildMessages(in []llm.Message) []anthropic.MessageParam {
 
 // BuildTools projects cross-provider tool defs into Anthropic SDK tool
 // params, reading `required` from the schema verbatim rather than
-// synthesizing it from property names.
+// synthesizing it from property names. Only the `properties` sub-map of
+// the schema is forwarded as `input_schema.properties`; handing the whole
+// schema would nest `type`/`properties`/`required` underneath and trips
+// strict JSON-Schema validators (e.g. DeepSeek's /anthropic proxy).
 func BuildTools(in []llm.ToolDef) []anthropic.ToolUnionParam {
 	var out []anthropic.ToolUnionParam
 	for _, tool := range in {
@@ -76,9 +86,10 @@ func BuildTools(in []llm.ToolDef) []anthropic.ToolUnionParam {
 		} else if raw, ok := schema["required"].([]string); ok {
 			required = append(required, raw...)
 		}
+		props, _ := schema["properties"].(map[string]any)
 		out = append(out, anthropic.ToolUnionParamOfTool(
 			anthropic.ToolInputSchemaParam{
-				Properties: schema,
+				Properties: props,
 				Required:   required,
 			},
 			tool.Name,

@@ -10,6 +10,7 @@ func Presets() map[string]ProviderEntry {
 			BaseURL:      "https://api.minimax.io/anthropic",
 			APIKeyEnv:    "MINIMAX_API_KEY",
 			DefaultModel: "MiniMax-M2.7",
+			Models:       []string{"MiniMax-M2.7", "MiniMax-M2.6", "MiniMax-M1"},
 		},
 		"anthropic": {
 			Name:         "anthropic",
@@ -17,6 +18,7 @@ func Presets() map[string]ProviderEntry {
 			BaseURL:      "",
 			APIKeyEnv:    "ANTHROPIC_API_KEY",
 			DefaultModel: "claude-sonnet-4-5",
+			Models:       []string{"claude-opus-4-7", "claude-sonnet-4-6", "claude-haiku-4-5"},
 		},
 		"openai": {
 			Name:         "openai",
@@ -41,6 +43,14 @@ func Presets() map[string]ProviderEntry {
 			BaseURL:      "https://api.moonshot.ai/v1",
 			APIKeyEnv:    "KIMI_API_KEY",
 			DefaultModel: "kimi-k2.6",
+		},
+		"deepseek": {
+			Name:         "deepseek",
+			Wire:         "anthropic",
+			BaseURL:      "https://api.deepseek.com/anthropic",
+			APIKeyEnv:    "DEEPSEEK_API_KEY",
+			DefaultModel: "deepseek-v4-pro",
+			Models:       []string{"deepseek-v4-pro", "deepseek-v4-flash"},
 		},
 	}
 }

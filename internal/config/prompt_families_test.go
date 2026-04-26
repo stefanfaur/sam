@@ -140,6 +140,8 @@ func TestFamilyForModel_BundledDefaults(t *testing.T) {
 		"gpt-5":                  "gpt",
 		"o1-preview":             "gpt",
 		"deepseek-r1":            "deepseek",
+		"deepseek-v4-pro":        "deepseek",
+		"deepseek-v4-flash":      "deepseek",
 	}
 	for model, want := range cases {
 		if got := cfg.FamilyForModel(model); got != want {
