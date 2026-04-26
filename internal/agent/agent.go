@@ -55,6 +55,9 @@ type Agent struct {
 	cancelTurn context.CancelFunc
 	cancelMode CancelMode
 	log        *slog.Logger
+
+	steerMu    sync.Mutex // protects steerQueue
+	steerQueue []string   // queued mid-stream steer messages
 }
 
 type Options struct {
@@ -214,6 +217,38 @@ func (a *Agent) Start() {
 // Close shuts down the agent
 func (a *Agent) Close() {
 	close(a.in)
+}
+
+// QueueSteer appends a steer message to the queue. Thread-safe.
+func (a *Agent) QueueSteer(text string) {
+	a.steerMu.Lock()
+	defer a.steerMu.Unlock()
+	a.steerQueue = append(a.steerQueue, text)
+}
+
+// DiscardQueue clears all queued steer messages. Thread-safe.
+func (a *Agent) DiscardQueue() {
+	a.steerMu.Lock()
+	defer a.steerMu.Unlock()
+	a.steerQueue = nil
+}
+
+// GetQueue returns a copy of the current steer queue. Thread-safe.
+func (a *Agent) GetQueue() []string {
+	a.steerMu.Lock()
+	defer a.steerMu.Unlock()
+	q := make([]string, len(a.steerQueue))
+	copy(q, a.steerQueue)
+	return q
+}
+
+// drainQueue atomically returns and clears the queue.
+func (a *Agent) drainQueue() []string {
+	a.steerMu.Lock()
+	defer a.steerMu.Unlock()
+	q := a.steerQueue
+	a.steerQueue = nil
+	return q
 }
 
 // Submit sends a message to the agent for processing

@@ -35,6 +35,7 @@ type Theme struct {
 	SkillCardHint   lipgloss.Style
 	Suggest         lipgloss.Style
 	SuggestSelected lipgloss.Style
+	QueueIndicator  lipgloss.Style
 
 	ToolCard        lipgloss.Style
 	ToolCardError   lipgloss.Style
@@ -112,6 +113,7 @@ func (t *Theme) Apply(width int) {
 	t.Suggest = lipgloss.NewStyle().Foreground(t.Muted)
 	t.SuggestSelected = lipgloss.NewStyle().
 		Foreground(lipgloss.Color("252")).Background(lipgloss.Color("238")).Bold(true)
+	t.QueueIndicator = lipgloss.NewStyle().Foreground(t.Muted).Italic(true)
 	t.InputPrompt = lipgloss.NewStyle().Foreground(t.Accent).Bold(true)
 	t.InputBox = lipgloss.NewStyle().
 		Border(lipgloss.RoundedBorder()).BorderForeground(t.Muted).Padding(0, 1)

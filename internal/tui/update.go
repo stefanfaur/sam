@@ -160,6 +160,10 @@ func (m *Model) View() string {
 		bottom = m.approval.View()
 	} else if m.suggest.active {
 		bottom = m.renderSuggestions() + "\n" + m.renderInputBox()
+	} else if m.pending != nil && m.agent != nil {
+		if ind := renderQueueIndicator(m.theme, m.agent.GetQueue(), m.width); ind != "" {
+			bottom = ind + "\n" + m.renderInputBox()
+		}
 	}
 	parts = append(parts, bottom)
 
@@ -241,8 +245,12 @@ func (m *Model) handleKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 				window = 500 * time.Millisecond
 			}
 			if !m.lastEscTime.IsZero() && now.Sub(m.lastEscTime) < window {
-				// Esc-Esc within window: abort the whole turn.
+				// Esc-Esc within window: abort the whole turn and drop any
+				// queued steer messages — abort means "throw it all out".
+				// Single Esc (granular) leaves the queue intact so the user's
+				// in-flight edits survive a per-step cancel.
 				m.agent.CancelTurn(agent.CancelModeAbort)
+				m.agent.DiscardQueue()
 				m.lastEscTime = time.Time{}
 				m.status.state = "cancelling"
 				return m, nil
@@ -302,9 +310,18 @@ func (m *Model) handleKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 			return m, cmd
 		}
 		if m.pending != nil {
-			var cmd tea.Cmd
-			m.input, cmd = m.input.Update(msg)
-			return m, cmd
+			// Turn is live: Enter queues the input as a steer message instead
+			// of submitting. Empty input is a no-op (avoids polluting the queue
+			// with whitespace).
+			text := strings.TrimSpace(m.input.Value())
+			if text == "" {
+				return m, nil
+			}
+			m.agent.QueueSteer(text)
+			m.input.Reset()
+			m.adjustInputHeight()
+			m.suggest.active = false
+			return m, nil
 		}
 		// Alt+Enter always inserts a newline (textarea keymap matches "alt+enter").
 		if msg.Alt {

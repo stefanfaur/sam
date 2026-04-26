@@ -1,0 +1,16 @@
+{
+  "planPath": "thoughts/shared/plans/tui/2026-04-26-feature-c-mid-stream-steer.md",
+  "tasks": [
+    {"id": 0, "subject": "Task 1: Add queue infrastructure to Agent", "status": "completed"},
+    {"id": 1, "subject": "Task 2: Wire queue drain into turn loop at clean iteration boundary", "status": "completed", "blockedBy": [0]},
+    {"id": 2, "subject": "Task 3: Handle stop=end_turn case: auto-submit queue as fresh user turn", "status": "completed", "blockedBy": [1]},
+    {"id": 3, "subject": "Task 4: TUI intercept Enter during pending turn and route to QueueSteer", "status": "completed", "blockedBy": [0]},
+    {"id": 4, "subject": "Task 5: TUI render queue indicator above input field", "status": "completed", "blockedBy": [3]},
+    {"id": 5, "subject": "Task 6: Handle Esc-Esc abort: discard queue", "status": "completed", "blockedBy": [0, 3]},
+    {"id": 6, "subject": "Task 7: Handle provider error mid-iteration: preserve queue, prepend on next user message", "status": "completed", "blockedBy": [0]},
+    {"id": 7, "subject": "Task 8: Integration test: full queue flow with mock providers", "status": "completed", "blockedBy": [1, 2, 3]},
+    {"id": 8, "subject": "Task 9: Build and validate with existing test suite", "status": "completed", "blockedBy": [7]},
+    {"id": 9, "subject": "Task 10: Test with DeepSeek provider (strict role alternation)", "status": "completed", "blockedBy": [8]}
+  ],
+  "lastUpdated": "2026-04-26T13:00:00Z"
+}

@@ -19,11 +19,15 @@ import (
 var parallelToolSem = make(chan struct{}, 8)
 
 func (a *Agent) turn(parentCtx context.Context, s submit) {
-	// Add user message to history
-	a.history = append(a.history, llm.Message{
+	// Add user message to history. If a previous turn errored mid-stream and
+	// the user queued steer messages while waiting, prepend them now so the
+	// edits survive the failed turn.
+	userMsg := llm.Message{
 		Role:    llm.RoleUser,
 		Content: []llm.ContentBlock{{Type: llm.ContentText, Text: s.userMsg}},
-	})
+	}
+	a.prependQueuedText(&userMsg)
+	a.history = append(a.history, userMsg)
 
 	// Per-turn cancel context. On a granular cancel during tool dispatch we
 	// install a fresh derived context so the next iteration can run; on abort
@@ -86,6 +90,16 @@ func (a *Agent) turn(parentCtx context.Context, s submit) {
 		}
 
 		if len(pending) == 0 || stop == "end_turn" {
+			// If the model called end_turn (or yielded no tools) but the
+			// user queued steer messages mid-stream, don't close the turn:
+			// drain the queue as a fresh user message and continue looping.
+			if queued := a.drainQueue(); len(queued) > 0 {
+				a.history = append(a.history, llm.Message{
+					Role:    llm.RoleUser,
+					Content: []llm.ContentBlock{{Type: llm.ContentText, Text: strings.Join(queued, "\n\n")}},
+				})
+				continue
+			}
 			emitToChan(s.out, TurnDone{StopReason: stop}, s.ctx)
 			return
 		}
@@ -140,6 +154,12 @@ func (a *Agent) turn(parentCtx context.Context, s submit) {
 		}
 
 		a.history = append(a.history, llm.Message{Role: llm.RoleUser, Content: results})
+
+		// Clean iteration boundary: drain steer queue and append it as a
+		// trailing ContentText block on the same tool_results user message.
+		// Strict providers (DeepSeek) require user/assistant alternation, so
+		// merging here avoids inserting a second consecutive user message.
+		a.mergeQueuedText(&a.history[len(a.history)-1])
 
 		if ctx.Err() != nil {
 			a.mu.Lock()
@@ -410,4 +430,38 @@ func emitToChan(out chan Event, e Event, ctx context.Context) {
 	case out <- e:
 	case <-ctx.Done():
 	}
+}
+
+// mergeQueuedText drains the steer queue and appends a trailing ContentText
+// block to msg holding the joined queue text. Returns true if anything was
+// merged. Used at the clean iteration boundary so queued user input rides on
+// the same tool_results user message instead of inserting a second consecutive
+// user role message (which strict providers reject).
+func (a *Agent) mergeQueuedText(msg *llm.Message) bool {
+	queue := a.drainQueue()
+	if len(queue) == 0 {
+		return false
+	}
+	msg.Content = append(msg.Content, llm.ContentBlock{
+		Type: llm.ContentText,
+		Text: strings.Join(queue, "\n\n"),
+	})
+	return true
+}
+
+// prependQueuedText drains the steer queue and prepends the joined queue text
+// as a ContentText block at the front of msg.Content. Used when starting a
+// fresh user turn after a previous turn errored out — preserves the queued
+// edits the user made while waiting on the failing turn.
+func (a *Agent) prependQueuedText(msg *llm.Message) bool {
+	queue := a.drainQueue()
+	if len(queue) == 0 {
+		return false
+	}
+	prefix := llm.ContentBlock{
+		Type: llm.ContentText,
+		Text: strings.Join(queue, "\n\n"),
+	}
+	msg.Content = append([]llm.ContentBlock{prefix}, msg.Content...)
+	return true
 }

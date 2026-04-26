@@ -313,3 +313,21 @@ func renderError(t *Theme, err error) string {
 	}
 	return t.ToolError.Render("✗ error: " + err.Error())
 }
+
+// renderQueueIndicator renders a one-line summary of queued steer messages
+// above the input box. Empty queue → empty string. Items joined with " ⏎ "
+// and truncated to keep the indicator on a single visual row.
+func renderQueueIndicator(t *Theme, queue []string, width int) string {
+	if len(queue) == 0 {
+		return ""
+	}
+	items := strings.Join(queue, " ⏎ ")
+	maxItems := width - 20
+	if maxItems < 20 {
+		maxItems = 60
+	}
+	if len(items) > maxItems {
+		items = items[:maxItems-1] + "…"
+	}
+	return t.QueueIndicator.Render(fmt.Sprintf("queued (%d): %s", len(queue), items))
+}
