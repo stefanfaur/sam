@@ -1,16 +1,17 @@
 # Domain: System
 
-> Last updated: 2026-04-24
+> Last updated: 2026-04-26
 
 ## Key Files
 - `internal/system/system.go` — Embedded FS (`//go:embed`), EmbeddedPrompt, EmbeddedToolDescription, DefaultDir
 - `internal/system/family.go` — EmbeddedFamilyPrompt, LoadFamilyPrompt, FamilyPromptExists for per-family addenda under `prompts/<family>.md`
 - `internal/system/seed.go` — Seed manifest (sha256), idempotent seeding of embedded defaults to `~/.sam/system/`
-- `internal/system/defaults/system-prompt.md` — Universal base prompt
+- `internal/system/defaults/system-prompt.md` — Universal base prompt (CAVEMAN/EVIDENCE/SCOPE/SAFETY/OUTPUT blocks; ~1.1KB, budget 1280)
 - `internal/system/defaults/tools/*.md` — Per-tool descriptions
-- `internal/system/defaults/prompts/*.md` — Per-family prompt addenda (claude, minimax, kimi-k2, trinity, gpt, deepseek)
+- `internal/system/defaults/prompts/*.md` — Per-family addenda, 9 files: claude, minimax, kimi-k2, trinity, gpt, gpt-reasoning, deepseek, deepseek-reasoner, deepseek-v4 (behavioral-only, no wire/context metadata)
+- `docs/families/*.md` — Maintainer-facing reference per family: wire transport, context window, API field names, recommended sampling params, known upstream bugs, source links. Not seeded, not sent to any model.
 - `cmd/sam/main.go::resolveSystemPrompt` — Composition pipeline: CLI/config override → base (disk > embedded) → family addendum (disk > embedded)
-- `internal/config/prompt_families.go` — `PromptFamily` type, `DefaultPromptFamilies`, `Config.FamilyForModel` (longest-prefix, lex-asc tiebreak)
+- `internal/config/prompt_families.go` — `PromptFamily` type, `DefaultPromptFamilies` (9 entries), `Config.FamilyForModel` (longest-prefix, lex-asc tiebreak)
 
 ## How It Works
 
@@ -27,6 +28,12 @@ Family matching uses `Config.FamilyForModel`: longest case-sensitive prefix
 wins, length ties break lexicographically by family name, families with empty
 `prefixes` are skipped (enables disable-via-empty). User-defined families in
 `[prompt_families.<name>]` TOML merge into the bundled defaults.
+
+The 9 bundled families split reasoning vs non-reasoning where wire behavior
+diverges: `gpt` (gpt-4o, gpt-4., gpt-4-) vs `gpt-reasoning` (gpt-5, o1, o3,
+o4); `deepseek` catch-all vs `deepseek-reasoner` (R1-series) vs `deepseek-v4`
+(v4-pro, v4-flash). Addenda are behavioral-only — wire/context/API-field metadata
+moved to `docs/families/*.md`.
 
 The TUI plumbs a `SystemResolverFn` closure through `tui.Options` and stores it
 as `sysResolveFn` on `Model`. Every model-switch path (`switchProvider`,

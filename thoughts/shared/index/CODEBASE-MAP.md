@@ -1,5 +1,5 @@
 # Codebase Map
-> Last updated: 2026-04-24 · "SAM CLI agent with Go stack, Bubbletea TUI, multi-provider LLM support (Anthropic, OpenAI compatible), per-tool approval policies, and per-model system-prompt composition."
+> Last updated: 2026-04-26 · "SAM CLI agent with Go stack, Bubbletea TUI, multi-provider LLM support (Anthropic, OpenAI compatible), per-tool approval policies, and per-model system-prompt composition. Family map split 6→9 (gpt/gpt-reasoning, deepseek/deepseek-reasoner/deepseek-v4); base prompt rewritten with SAFETY/SCOPE/OUTPUT; openaicompat gained PrependFormatting cap, system-as-user splice, and tool-call empty-content fence; docs/families/*.md hosts maintainer reference per family."
 
 ## Physical Modules
 - **cmd/sam**             → CLI entry point, config loading, provider initialization, resolveSystemPrompt
