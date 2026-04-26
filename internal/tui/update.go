@@ -316,20 +316,63 @@ func (m *Model) handleKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 	return m, cmd
 }
 
-// adjustInputHeight grows the textarea to fit its content, clamped to a
-// reasonable max so the input box doesn't swallow scrollback on long pastes.
-const maxInputHeight = 10
+// adjustInputHeight grows the textarea to fit its content (counting
+// soft-wrapped rows, not just logical lines), clamped so the input box
+// doesn't swallow the entire screen on huge pastes.
+const minInputHeightCap = 10
+
+func (m *Model) inputHeightCap() int {
+	cap := minInputHeightCap
+	if m.height > 0 {
+		if h := m.height / 2; h > cap {
+			cap = h
+		}
+	}
+	return cap
+}
 
 func (m *Model) adjustInputHeight() {
-	m.setInputHeight(m.input.LineCount())
+	m.setInputHeight(m.visualLineCount())
+}
+
+// visualLineCount counts the number of terminal rows the current input
+// will occupy after soft-wrapping, matching what bubbles/textarea renders.
+// Approximates the textarea's word-wrap with ceil(width/lineWidth); off by
+// at most a row at word boundaries, which is acceptable for sizing.
+func (m *Model) visualLineCount() int {
+	width := m.input.Width()
+	if width <= 0 {
+		return m.input.LineCount()
+	}
+	val := m.input.Value()
+	if val == "" {
+		return 1
+	}
+	total := 0
+	for _, line := range strings.Split(val, "\n") {
+		w := lipgloss.Width(line)
+		if w == 0 {
+			total++
+			continue
+		}
+		rows := (w + width - 1) / width
+		if rows < 1 {
+			rows = 1
+		}
+		total += rows
+	}
+	if total < 1 {
+		total = 1
+	}
+	return total
 }
 
 func (m *Model) setInputHeight(n int) {
 	if n < 1 {
 		n = 1
 	}
-	if n > maxInputHeight {
-		n = maxInputHeight
+	if cap := m.inputHeightCap(); n > cap {
+		n = cap
 	}
 	if n != m.input.Height() {
 		m.input.SetHeight(n)
@@ -340,7 +383,7 @@ func (m *Model) setInputHeight(n int) {
 // the textarea's internal viewport has room for the cursor on the new line
 // instead of scrolling the first line (prompt arrow) out of view.
 func (m *Model) growInputForNewline() {
-	m.setInputHeight(m.input.LineCount() + 1)
+	m.setInputHeight(m.visualLineCount() + 1)
 }
 
 func (m *Model) refreshSuggestions() {
@@ -430,8 +473,14 @@ func (m *Model) dispatchCommand(cmd Command, arg string, sk *skills.Skill) (tea.
 		return m, tea.Quit
 
 	case CmdClear:
+		m.agent.ClearHistory()
 		m.pending = nil
 		m.scanner = &blockScanner{}
+		m.status.turnIn = 0
+		m.status.turnOut = 0
+		m.status.turnCacheRead = 0
+		m.status.sessionIn = 0
+		m.status.sessionOut = 0
 		m.input.Reset()
 		m.suggest.active = false
 		return m, m.clearAndAnchorBottom()
@@ -456,7 +505,7 @@ func (m *Model) dispatchCommand(cmd Command, arg string, sk *skills.Skill) (tea.
 		if arg != "" {
 			return m, m.applyModelSpec(arg)
 		}
-		m.modal = newModelForm(m.status.provider, m.status.model)
+		m.modal = newModelForm(m.status.provider, m.status.model, m.providers[m.status.provider].Models)
 		m.input.Blur()
 		return m, m.modal.Init()
 

@@ -20,19 +20,6 @@ type ProviderFactory func(name, model string) (llm.Provider, error)
 
 // --- /model ---
 
-var modelCatalogue = map[string][]string{
-	"minimax": {
-		"MiniMax-M2.7",
-		"MiniMax-M2.6",
-		"MiniMax-M1",
-	},
-	"anthropic": {
-		"claude-opus-4-7",
-		"claude-sonnet-4-6",
-		"claude-haiku-4-5",
-	},
-}
-
 type modelForm struct {
 	form   *huh.Form
 	done   bool
@@ -40,10 +27,10 @@ type modelForm struct {
 	custom string
 }
 
-func newModelForm(provider, current string) *modelForm {
+func newModelForm(provider, current string, known []string) *modelForm {
 	m := &modelForm{choice: current}
 	opts := []huh.Option[string]{}
-	for _, name := range modelCatalogue[provider] {
+	for _, name := range known {
 		opts = append(opts, huh.NewOption(name, name))
 	}
 	opts = append(opts, huh.NewOption("custom…", "__custom__"))
