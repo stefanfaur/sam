@@ -13,22 +13,58 @@ import (
 func strPtr(s string) *string { return &s }
 
 // toWireMessages projects the cross-provider history (sys + []llm.Message)
-// into the OpenAI-compat chat message sequence per spec §3.
+// into the OpenAI-compat chat message sequence.
+//
+// Three caps-driven behaviors affect the system text:
+//   - PrependFormatting: literal "Formatting re-enabled.\n" prepended (o-series).
+//   - SystemRole=="user": wrap sys in <system>...</system> and splice into the
+//     first user message instead of emitting a separate system message
+//     (self-hosted original R1 weights).
+//   - Otherwise: emit as a standalone first message with role=caps.SystemRole.
 func toWireMessages(sys string, msgs []llm.Message, caps Capabilities) []chatMessage {
+	if sys != "" && caps.PrependFormatting {
+		sys = "Formatting re-enabled.\n" + sys
+	}
+
 	var out []chatMessage
-	if sys != "" {
+	emitSystem := sys != "" && caps.SystemRole != "user"
+	if emitSystem {
 		out = append(out, chatMessage{Role: caps.SystemRole, Content: strPtr(sys)})
 	}
+
 	for _, msg := range msgs {
 		switch msg.Role {
 		case llm.RoleUser:
-			out = append(out, translateUserMessage(msg)...)
+			translated := translateUserMessage(msg)
+			if sys != "" && caps.SystemRole == "user" {
+				spliced := false
+				for i := range translated {
+					if translated[i].Role == "user" && translated[i].Content != nil {
+						wrapped := "<system>\n" + sys + "\n</system>\n\n" + *translated[i].Content
+						translated[i].Content = strPtr(wrapped)
+						spliced = true
+						break
+					}
+				}
+				if !spliced {
+					wrapped := "<system>\n" + sys + "\n</system>"
+					translated = append([]chatMessage{{Role: "user", Content: strPtr(wrapped)}}, translated...)
+				}
+				sys = ""
+			}
+			out = append(out, translated...)
 		case llm.RoleAssistant:
 			if m, ok := translateAssistantMessage(msg, caps); ok {
 				out = append(out, m)
 			}
 		}
 	}
+
+	if sys != "" && caps.SystemRole == "user" {
+		wrapped := "<system>\n" + sys + "\n</system>"
+		out = append(out, chatMessage{Role: "user", Content: strPtr(wrapped)})
+	}
+
 	return out
 }
 
@@ -109,6 +145,12 @@ func translateAssistantMessage(msg llm.Message, caps Capabilities) (chatMessage,
 	}
 	if len(toolCalls) > 0 {
 		out.ToolCalls = toolCalls
+		// Trinity (and some other OpenAI-compat servers) reject assistant
+		// messages with tool_calls and a null content field. Force content
+		// to "" so JSON marshals `"content":""`. Safe on all tested servers.
+		if out.Content == nil {
+			out.Content = strPtr("")
+		}
 	}
 	if out.Content == nil && out.Reasoning == "" && out.ReasoningContent == "" && len(out.ToolCalls) == 0 {
 		return chatMessage{}, false

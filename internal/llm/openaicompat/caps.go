@@ -20,6 +20,7 @@ type Capabilities struct {
 	EchoReasoning             bool
 	ReasoningSource           string // "none" | "inline_think" | "reasoning_content" | "reasoning" | "both"
 	AuthHeader                string // "bearer" | "api-key" | "none"
+	PrependFormatting         bool   // o-series / gpt-5: prepend "Formatting re-enabled.\n"
 }
 
 type capsEntry struct {
@@ -39,6 +40,7 @@ var orderedCapsTable = []capsEntry{
 			SupportsReasoningEffort: true,
 			ReasoningSource:         "none",
 			EchoReasoning:           false,
+			PrependFormatting:       true,
 		},
 	},
 	{
@@ -115,6 +117,7 @@ func DefaultCaps(model string) Capabilities {
 				merged.SupportsReasoningEffort = e.caps.SupportsReasoningEffort
 				merged.ReasoningSource = e.caps.ReasoningSource
 				merged.EchoReasoning = e.caps.EchoReasoning
+				merged.PrependFormatting = e.caps.PrependFormatting
 				return merged
 			}
 		}

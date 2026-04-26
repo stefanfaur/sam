@@ -98,21 +98,21 @@ func TestAssistantThinkingPlusToolUseNoTextContentOmitted(t *testing.T) {
 		t.Fatalf("got %d", len(got))
 	}
 	m := got[0]
-	if m.Content != nil {
-		t.Errorf("content should be nil, got %q", *m.Content)
+	// Tool-call-only assistant messages now emit `"content":""` (explicit empty
+	// string) so Trinity / other strict OpenAI-compat servers don't reject the
+	// turn for null content. Safe on all tested servers.
+	if m.Content == nil || *m.Content != "" {
+		t.Errorf("content should be empty string, got %v", m.Content)
 	}
-	// Trinity's ReasoningSource is "reasoning_content" → the outbound field
-	// routes there (not into the bare "reasoning" field).
 	if m.ReasoningContent != "must call tool" {
 		t.Errorf("reasoning_content: %q", m.ReasoningContent)
 	}
 	if m.Reasoning != "" {
 		t.Errorf("reasoning should be empty when source is reasoning_content, got %q", m.Reasoning)
 	}
-	// Verify the JSON has no "content" key at all.
 	raw := mustMarshal(t, m)
-	if strings.Contains(raw, "\"content\"") {
-		t.Errorf("content key leaked into JSON: %s", raw)
+	if !strings.Contains(raw, "\"content\":\"\"") {
+		t.Errorf("expected explicit empty content in JSON, got: %s", raw)
 	}
 }
 
@@ -232,6 +232,91 @@ func TestBuildRequestMaxTokensField(t *testing.T) {
 	r5 := buildRequest(llm.Request{Model: "gpt-5", MaxTokens: 2048}, DefaultCaps("gpt-5"), "")
 	if r5.MaxCompletionTokens == nil || *r5.MaxCompletionTokens != 2048 || r5.MaxTokens != nil {
 		t.Errorf("gpt-5 max: %+v", r5)
+	}
+}
+
+func TestToWireMessages_FormattingPrepend(t *testing.T) {
+	caps := Capabilities{SystemRole: "developer", PrependFormatting: true}
+	out := toWireMessages("You are SAM.", nil, caps)
+	if len(out) == 0 || out[0].Content == nil {
+		t.Fatalf("expected system message, got: %+v", out)
+	}
+	want := "Formatting re-enabled.\nYou are SAM."
+	if got := *out[0].Content; got != want {
+		t.Errorf("system content: got %q, want %q", got, want)
+	}
+	caps.PrependFormatting = false
+	out = toWireMessages("You are SAM.", nil, caps)
+	if got := *out[0].Content; got != "You are SAM." {
+		t.Errorf("no-prepend case: got %q", got)
+	}
+}
+
+func TestToWireMessages_SystemAsUserSplice(t *testing.T) {
+	caps := Capabilities{SystemRole: "user"}
+	msgs := []llm.Message{
+		{Role: llm.RoleUser, Content: []llm.ContentBlock{{Type: llm.ContentText, Text: "hi"}}},
+	}
+	out := toWireMessages("You are SAM.", msgs, caps)
+	for _, m := range out {
+		if m.Role == "system" {
+			t.Errorf("unexpected system message in wire output: %+v", m)
+		}
+	}
+	if len(out) == 0 || out[0].Role != "user" || out[0].Content == nil {
+		t.Fatalf("expected first user message, got: %+v", out)
+	}
+	want := "<system>\nYou are SAM.\n</system>\n\nhi"
+	if got := *out[0].Content; got != want {
+		t.Errorf("spliced content: got %q, want %q", got, want)
+	}
+}
+
+func TestToWireMessages_SystemAsUser_NoUserMessage(t *testing.T) {
+	caps := Capabilities{SystemRole: "user"}
+	out := toWireMessages("You are SAM.", nil, caps)
+	if len(out) != 1 || out[0].Role != "user" || out[0].Content == nil {
+		t.Fatalf("expected one synthesized user message, got: %+v", out)
+	}
+	want := "<system>\nYou are SAM.\n</system>"
+	if got := *out[0].Content; got != want {
+		t.Errorf("synthesized content: got %q, want %q", got, want)
+	}
+}
+
+func TestTranslateAssistantMessage_ToolCallOnlyContentEmpty(t *testing.T) {
+	msg := llm.Message{
+		Role: llm.RoleAssistant,
+		Content: []llm.ContentBlock{
+			{Type: llm.ContentToolUse, ToolUseID: "t1", ToolName: "read", Input: json.RawMessage(`{"path":"x"}`)},
+		},
+	}
+	got, ok := translateAssistantMessage(msg, Capabilities{})
+	if !ok {
+		t.Fatalf("message dropped")
+	}
+	if got.Content == nil {
+		t.Errorf("Content is nil; expected pointer to empty string")
+	} else if *got.Content != "" {
+		t.Errorf("Content = %q; want \"\"", *got.Content)
+	}
+	if len(got.ToolCalls) != 1 {
+		t.Errorf("ToolCalls = %+v; want 1 entry", got.ToolCalls)
+	}
+}
+
+func TestDefaultCaps_PrependFormattingOnReasoningModels(t *testing.T) {
+	on := []string{"gpt-5", "gpt-5-mini", "o1-preview", "o3-mini", "o4-mini"}
+	off := []string{"gpt-4o", "gpt-4.1-mini", "kimi-k2", "trinity-large", "deepseek-r1", "deepseek-chat"}
+	for _, m := range on {
+		if got := DefaultCaps(m); !got.PrependFormatting {
+			t.Errorf("DefaultCaps(%q).PrependFormatting = false; want true", m)
+		}
+	}
+	for _, m := range off {
+		if got := DefaultCaps(m); got.PrependFormatting {
+			t.Errorf("DefaultCaps(%q).PrependFormatting = true; want false", m)
+		}
 	}
 }
 
