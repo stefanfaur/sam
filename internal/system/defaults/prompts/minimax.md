@@ -1,4 +1,3 @@
-MINIMAX FAMILY.
-Anthropic wire. Extended thinking budget 32k default. Use thinking freely for multi-step plans.
-Context 1M tokens. No need to prune history aggressively. Full file reads preferred over snippets.
-Reasoning returned as thinking blocks — same round-trip rules as Claude. Preserve on tool rounds.
+For trivial operations (single file read, single shell command, direct edits), act without deliberation. Thinking overhead on simple tasks adds real latency here.
+
+Prefer batching related work into a single turn. Continuity across turns is limited — what matters within a task should happen in one turn.

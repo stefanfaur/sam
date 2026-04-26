@@ -195,7 +195,7 @@ func TestResolveSystemPrompt_EmptyFamilyFileMeansNoAppend(t *testing.T) {
 	if got != system.EmbeddedPrompt() {
 		t.Fatalf("expected base only, got %q", got)
 	}
-	if strings.Contains(got, "CLAUDE FAMILY") {
+	if strings.Contains(got, "use_parallel_tool_calls") {
 		t.Fatal("embedded family leaked through empty disk file")
 	}
 }
@@ -204,8 +204,46 @@ func TestResolveSystemPrompt_MissingFamilyFileFallsBackToEmbedded(t *testing.T) 
 	dir := t.TempDir()
 	cfg := &config.Config{PromptFamilies: config.DefaultPromptFamilies()}
 	got := resolveForTest(cfg, dir, "claude-sonnet-4-5")
-	if !strings.Contains(got, "CLAUDE FAMILY") {
+	if !strings.Contains(got, "use_parallel_tool_calls") {
 		t.Fatalf("embedded family should apply when disk file missing: %q", got)
+	}
+}
+
+// TestAllFamilyAddendaResolve — every family declared in
+// DefaultPromptFamilies() must resolve a non-empty addendum from embedded
+// defaults. Guards both the family map and the defaults/prompts/ dir
+// against drift.
+func TestAllFamilyAddendaResolve(t *testing.T) {
+	for name := range config.DefaultPromptFamilies() {
+		t.Run(name, func(t *testing.T) {
+			got := system.EmbeddedFamilyPrompt(name)
+			if strings.TrimSpace(got) == "" {
+				t.Errorf("family %q resolved empty addendum from embedded defaults", name)
+			}
+		})
+	}
+}
+
+// TestBasePrompt_SizeBudget guards against unintended base-prompt growth.
+// Budget set to 1280 after SAFETY block addition (2026-04-24 redesign).
+// Further growth requires explicit budget review — bump in same PR.
+func TestBasePrompt_SizeBudget(t *testing.T) {
+	const budget = 1280
+	base := system.EmbeddedPrompt()
+	if got := len(base); got >= budget {
+		t.Errorf("base prompt size %d bytes >= %d budget; trim or raise budget", got, budget)
+	}
+}
+
+// TestBasePrompt_ContainsSafetyBlock — guard SAFETY block presence so it
+// cannot be silently removed.
+func TestBasePrompt_ContainsSafetyBlock(t *testing.T) {
+	base := system.EmbeddedPrompt()
+	if !strings.Contains(base, "SAFETY.") {
+		t.Errorf("base prompt missing SAFETY block header; got:\n%s", base)
+	}
+	if !strings.Contains(base, "user confirmation") {
+		t.Errorf("base prompt SAFETY block missing confirmation language; got:\n%s", base)
 	}
 }
 
