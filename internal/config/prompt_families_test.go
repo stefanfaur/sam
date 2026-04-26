@@ -7,31 +7,38 @@ import (
 )
 
 func TestDefaultPromptFamilies_Shape(t *testing.T) {
-	fams := DefaultPromptFamilies()
-	want := map[string][]string{
-		"claude":   {"claude-opus", "claude-sonnet", "claude-haiku"},
-		"minimax":  {"MiniMax-"},
-		"kimi-k2":  {"kimi-k2"},
-		"trinity":  {"trinity-"},
-		"gpt":      {"gpt-5", "gpt-4o", "gpt-4.1", "o1", "o3", "o4"},
-		"deepseek": {"deepseek-"},
+	got := DefaultPromptFamilies()
+	if len(got) != 9 {
+		t.Fatalf("family count: want 9, got %d: %v", len(got), got)
 	}
-	for name, prefixes := range want {
-		got, ok := fams[name]
-		if !ok {
-			t.Errorf("family %q missing", name)
-			continue
-		}
-		if len(got.Prefixes) != len(prefixes) {
-			t.Errorf("family %q: prefix count %d want %d", name, len(got.Prefixes), len(prefixes))
-			continue
-		}
-		for i, p := range prefixes {
-			if got.Prefixes[i] != p {
-				t.Errorf("family %q prefix[%d]: %q want %q", name, i, got.Prefixes[i], p)
-			}
+	wantNames := []string{
+		"claude", "minimax", "kimi-k2", "trinity",
+		"gpt", "gpt-reasoning",
+		"deepseek", "deepseek-reasoner", "deepseek-v4",
+	}
+	for _, n := range wantNames {
+		if _, ok := got[n]; !ok {
+			t.Errorf("missing family: %q", n)
 		}
 	}
+	if fam, ok := got["gpt-reasoning"]; !ok || !containsStr(fam.Prefixes, "gpt-5") {
+		t.Errorf("gpt-reasoning missing gpt-5 prefix: %+v", fam)
+	}
+	if fam, ok := got["gpt"]; !ok || !containsStr(fam.Prefixes, "gpt-4.") {
+		t.Errorf("gpt missing gpt-4. catch-all: %+v", fam)
+	}
+	if fam, ok := got["deepseek-v4"]; !ok || !containsStr(fam.Prefixes, "deepseek-v4") {
+		t.Errorf("deepseek-v4 missing deepseek-v4 prefix: %+v", fam)
+	}
+}
+
+func containsStr(xs []string, s string) bool {
+	for _, x := range xs {
+		if x == s {
+			return true
+		}
+	}
+	return false
 }
 
 // cleanConfigEnv zeros every env var that can override config defaults so a
@@ -52,7 +59,11 @@ func TestLoadSeedsDefaultPromptFamilies(t *testing.T) {
 	if err != nil {
 		t.Fatalf("load: %v", err)
 	}
-	for _, name := range []string{"claude", "minimax", "kimi-k2", "trinity", "gpt", "deepseek"} {
+	for _, name := range []string{
+		"claude", "minimax", "kimi-k2", "trinity",
+		"gpt", "gpt-reasoning",
+		"deepseek", "deepseek-reasoner", "deepseek-v4",
+	} {
 		if _, ok := cfg.PromptFamilies[name]; !ok {
 			t.Errorf("default family %q missing after Load", name)
 		}
@@ -137,15 +148,48 @@ func TestFamilyForModel_BundledDefaults(t *testing.T) {
 		"kimi-k2.5":              "kimi-k2",
 		"trinity-large-thinking": "trinity",
 		"gpt-4o-mini":            "gpt",
-		"gpt-5":                  "gpt",
-		"o1-preview":             "gpt",
-		"deepseek-r1":            "deepseek",
-		"deepseek-v4-pro":        "deepseek",
-		"deepseek-v4-flash":      "deepseek",
+		"gpt-5":                  "gpt-reasoning",
+		"o1-preview":             "gpt-reasoning",
+		"deepseek-r1":            "deepseek-reasoner",
+		"deepseek-v4-pro":        "deepseek-v4",
+		"deepseek-v4-flash":      "deepseek-v4",
 	}
 	for model, want := range cases {
 		if got := cfg.FamilyForModel(model); got != want {
 			t.Errorf("FamilyForModel(%q) = %q, want %q", model, got, want)
+		}
+	}
+}
+
+func TestFamilyForModel_NewSplits(t *testing.T) {
+	cfg := &Config{PromptFamilies: DefaultPromptFamilies()}
+	cases := []struct {
+		model string
+		want  string
+	}{
+		{"gpt-5", "gpt-reasoning"},
+		{"gpt-5-mini", "gpt-reasoning"},
+		{"o1-preview", "gpt-reasoning"},
+		{"o3-mini", "gpt-reasoning"},
+		{"o4-mini", "gpt-reasoning"},
+		{"gpt-4o", "gpt"},
+		{"gpt-4o-mini", "gpt"},
+		{"gpt-4-turbo", "gpt"},
+		{"gpt-4.1", "gpt"},
+		{"gpt-4.1-mini", "gpt"},
+		{"gpt-4.5-preview", "gpt"},
+		{"deepseek-chat", "deepseek"},
+		{"deepseek-coder", "deepseek"},
+		{"deepseek-v3", "deepseek"},
+		{"deepseek-reasoner", "deepseek-reasoner"},
+		{"deepseek-r1", "deepseek-reasoner"},
+		{"deepseek-r1-distill-llama-70b", "deepseek-reasoner"},
+		{"deepseek-v4-pro", "deepseek-v4"},
+		{"deepseek-v4-flash", "deepseek-v4"},
+	}
+	for _, tc := range cases {
+		if got := cfg.FamilyForModel(tc.model); got != tc.want {
+			t.Errorf("FamilyForModel(%q) = %q, want %q", tc.model, got, tc.want)
 		}
 	}
 }

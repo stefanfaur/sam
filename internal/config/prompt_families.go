@@ -17,12 +17,15 @@ type PromptFamily struct {
 // a fresh copy.
 func DefaultPromptFamilies() map[string]PromptFamily {
 	return map[string]PromptFamily{
-		"claude":   {Prefixes: []string{"claude-opus", "claude-sonnet", "claude-haiku"}},
-		"minimax":  {Prefixes: []string{"MiniMax-"}},
-		"kimi-k2":  {Prefixes: []string{"kimi-k2"}},
-		"trinity":  {Prefixes: []string{"trinity-"}},
-		"gpt":      {Prefixes: []string{"gpt-5", "gpt-4o", "gpt-4.1", "o1", "o3", "o4"}},
-		"deepseek": {Prefixes: []string{"deepseek-"}},
+		"claude":            {Prefixes: []string{"claude-opus", "claude-sonnet", "claude-haiku"}},
+		"minimax":           {Prefixes: []string{"MiniMax-"}},
+		"kimi-k2":           {Prefixes: []string{"kimi-k2"}},
+		"trinity":           {Prefixes: []string{"trinity-"}},
+		"gpt":               {Prefixes: []string{"gpt-4o", "gpt-4.", "gpt-4-"}},
+		"gpt-reasoning":     {Prefixes: []string{"gpt-5", "o1", "o3", "o4"}},
+		"deepseek":          {Prefixes: []string{"deepseek-"}},
+		"deepseek-reasoner": {Prefixes: []string{"deepseek-reasoner", "deepseek-r1"}},
+		"deepseek-v4":       {Prefixes: []string{"deepseek-v4"}},
 	}
 }
 
