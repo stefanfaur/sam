@@ -45,6 +45,31 @@ type RTKConfig struct {
 	Mode string `toml:"mode"` // "auto" (default) | "on" | "off"
 }
 
+// UXConfig holds user-experience knobs for the TUI shell. Defaults are
+// chosen so the current behavior is preserved when the [ux] block is absent.
+type UXConfig struct {
+	// CheckpointEnabled gates the Esc-Esc rewind feature. When false, no
+	// shadow snapshots are written and Esc-Esc is a no-op even inside a git
+	// repo. Default true.
+	CheckpointEnabled *bool `toml:"checkpoint_enabled"`
+	// EscDoubleWindowMs is the milliseconds within which two Esc presses
+	// are treated as a chord. Default 500.
+	EscDoubleWindowMs int `toml:"esc_double_window_ms"`
+}
+
+// Resolved returns the UXConfig with defaults applied for any unset field.
+func (u UXConfig) Resolved() (checkpointEnabled bool, escDoubleWindowMs int) {
+	checkpointEnabled = true
+	if u.CheckpointEnabled != nil {
+		checkpointEnabled = *u.CheckpointEnabled
+	}
+	escDoubleWindowMs = 500
+	if u.EscDoubleWindowMs > 0 {
+		escDoubleWindowMs = u.EscDoubleWindowMs
+	}
+	return
+}
+
 type Config struct {
 	Provider         string                   `toml:"provider"`
 	Model            string                   `toml:"model"`
@@ -58,6 +83,7 @@ type Config struct {
 		Theme string `toml:"theme"`
 	} `toml:"tui"`
 	RTK RTKConfig `toml:"rtk"`
+	UX  UXConfig  `toml:"ux"`
 }
 
 // ModelContextWindow returns the configured context window in tokens,
@@ -153,6 +179,7 @@ type rawConfig struct {
 		Theme string `toml:"theme"`
 	} `toml:"tui"`
 	RTK RTKConfig `toml:"rtk"`
+	UX  UXConfig  `toml:"ux"`
 }
 
 func Load(over Overrides) (*Config, error) {
@@ -196,6 +223,7 @@ func Load(over Overrides) (*Config, error) {
 		if raw.RTK.Mode != "" {
 			cfg.RTK.Mode = raw.RTK.Mode
 		}
+		cfg.UX = raw.UX
 		// Full-replace merge: any provider key declared in TOML replaces
 		// the preset entry entirely.
 		for name, entry := range raw.Providers {

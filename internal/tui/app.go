@@ -123,6 +123,13 @@ type Model struct {
 	pickerOriginal string // textarea value at the time '@' was pressed
 
 	imageAttachments []imageAttachment
+
+	// Rewind / time-travel state. rewind/restoreUI are mutually exclusive
+	// overlays. undoRewind is a one-slot buffer cleared on next submit.
+	rewind     *rewindPicker
+	restoreUI  *restoreConfirm
+	undoRewind *undoRewindSlot
+	rewindHint rewindHintState
 }
 
 // skillInvocation is a TUI-side record of a slash-invoked skill so its body
@@ -219,6 +226,10 @@ type Options struct {
 	ContextWindowFn  func(model string) int
 	SystemResolverFn func(model string) string
 	Providers        map[string]config.ProviderEntry
+	// EscDoubleWindow is the chord window for Esc-Esc detection (used both
+	// during a turn-in-flight for abort and idle for rewind picker open).
+	// Zero value means default (500ms).
+	EscDoubleWindow time.Duration
 }
 
 func New(a *agent.Agent, ring *logging.Ring, opts Options) *Model {
@@ -266,8 +277,13 @@ func New(a *agent.Agent, ring *logging.Ring, opts Options) *Model {
 		theme:           theme,
 		git:             probeGit(a.LaunchDir()),
 		ring:            ring,
-		scanner:         &blockScanner{},
-		escDoubleWindow: 500 * time.Millisecond,
+		scanner: &blockScanner{},
+		escDoubleWindow: func() time.Duration {
+			if opts.EscDoubleWindow > 0 {
+				return opts.EscDoubleWindow
+			}
+			return 500 * time.Millisecond
+		}(),
 		status: statusbarModel{
 			provider: opts.Provider,
 			model:    opts.Model,

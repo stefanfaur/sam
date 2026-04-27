@@ -26,6 +26,7 @@ const (
 	CmdShowSkill    Command = "show-skill"
 	CmdShowTool     Command = "show-tool"
 	CmdShowThinking Command = "show-thinking"
+	CmdUnrewind     Command = "unrewind"
 )
 
 // commandSuggestions lists built-in slash commands.
@@ -47,6 +48,7 @@ var commandSuggestions = []struct {
 	{"/show-tool", "expand a previously-collapsed tool call (arg: index; default last)"},
 	{"/show-thinking", "expand a previously-collapsed thinking block (arg: index; default last)"},
 	{"/settings", "open settings modal (statusline, providers, theme)"},
+	{"/unrewind", "undo the most recent Esc-Esc rewind"},
 }
 
 // BuiltinNames lists slash names reserved by the TUI itself.
@@ -54,6 +56,7 @@ var commandSuggestions = []struct {
 var BuiltinNames = []string{
 	"exit", "quit", "clear", "reset", "model", "provider", "auth", "cwd", "help",
 	"settings", "reload-skills", "show-skill", "show-tool", "show-thinking",
+	"unrewind",
 }
 
 // parseCommand extracts a slash command from user input. The registry, when
@@ -97,6 +100,8 @@ func parseCommand(text string, reg *skills.Registry) (Command, string, *skills.S
 		return CmdShowTool, arg, nil
 	case "show-thinking":
 		return CmdShowThinking, arg, nil
+	case "unrewind":
+		return CmdUnrewind, "", nil
 	}
 	// Slash name isn't a built-in. If a registry is attached, try skill lookup.
 	// Skill names are lowercased at validation time (regex), so matching is

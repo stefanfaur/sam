@@ -22,6 +22,12 @@ func encodeBase64(b []byte) string { return base64.StdEncoding.EncodeToString(b)
 var parallelToolSem = make(chan struct{}, 8)
 
 func (a *Agent) turn(parentCtx context.Context, s submit) {
+	// Capture the user-visible turn number and accumulate tool-call records
+	// for the persistent turn record. Snapshots happen only at graceful turn
+	// completion (end_turn / natural loop exit) — cancels and errors skip.
+	var turnTools []ToolCallRecord
+	turnUserMsg := s.userMsg
+
 	// Add user message to history. If a previous turn errored mid-stream and
 	// the user queued steer messages while waiting, prepend them now so the
 	// edits survive the failed turn.
@@ -36,6 +42,7 @@ func (a *Agent) turn(parentCtx context.Context, s submit) {
 	userMsg := llm.Message{Role: llm.RoleUser, Content: content}
 	a.prependQueuedText(&userMsg)
 	a.history = append(a.history, userMsg)
+	turnUserMsgIdx := len(a.history) - 1
 
 	// Per-turn cancel context. On a granular cancel during tool dispatch we
 	// install a fresh derived context so the next iteration can run; on abort
@@ -108,6 +115,7 @@ func (a *Agent) turn(parentCtx context.Context, s submit) {
 				})
 				continue
 			}
+			a.snapshotTurn(turnUserMsg, turnUserMsgIdx, turnTools, stop)
 			emitToChan(s.out, TurnDone{StopReason: stop}, s.ctx)
 			return
 		}
@@ -159,6 +167,15 @@ func (a *Agent) turn(parentCtx context.Context, s submit) {
 			}
 			a.execParallelGroup(ctx, s, pending[di:j], results[di:j])
 			di = j
+		}
+
+		for idx, call := range pending {
+			turnTools = append(turnTools, ToolCallRecord{
+				Name:    call.Name,
+				Input:   call.Input,
+				Output:  results[idx].Output,
+				IsError: results[idx].IsError,
+			})
 		}
 
 		a.history = append(a.history, llm.Message{Role: llm.RoleUser, Content: results})

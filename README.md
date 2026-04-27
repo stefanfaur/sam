@@ -270,6 +270,19 @@ operations without changing what the agent sees logically.
 mode = "auto"  # "auto" (default) | "on" | "off"
 ```
 
+### UX block
+
+```toml
+[ux]
+checkpoint_enabled    = true   # default; set false to disable Esc-Esc rewind
+esc_double_window_ms  = 500    # ms within which two Esc presses chord
+```
+
+`checkpoint_enabled = false` keeps SAM from writing any `refs/sam/checkpoints/`
+refs and disables the rewind picker even inside a git repo.
+`esc_double_window_ms` tunes both the abort chord (during a turn) and the
+rewind-open chord (idle).
+
 - `mode = "auto"` — use rtk if the binary is on PATH; otherwise fall through
   to the native, uncompressed paths. No startup error.
 - `mode = "on"` — rtk must be installed; startup fails if not.
@@ -315,6 +328,8 @@ verify with `rtk --version`.
 | `Ctrl+D` | Quit (when input empty) |
 | `Ctrl+L` | Toggle debug overlay |
 | `Ctrl+V` | Attach binary image from clipboard |
+| `Esc` `Esc` (idle) | Open the rewind picker (time-travel through prior turns) |
+| `Ctrl+Z` (idle) | Undo the most recent rewind (one-slot buffer) |
 | `@` | Open file picker (fuzzy filter) |
 | `Esc` (in picker) | Close picker |
 | `Tab` / `Enter` (in picker) | Insert `@<path>` reference |
@@ -342,6 +357,38 @@ verify with `rtk --version`.
   renders above the input box: count, total token estimate (Anthropic
   `(w*h)/750`; OpenAI tile-based `tilesW*tilesH*170+85`; unknown providers
   show `≈ unknown`), provider name, dimensions, and total bytes.
+
+### Rewind (Esc-Esc time travel)
+
+When SAM runs inside a git repository, every gracefully-completed agent turn
+writes a shadow git commit under `refs/sam/checkpoints/<session-id>/<turn>`.
+These refs never touch your `HEAD`, current branch, working tree, or index —
+they are pure objects in `.git/objects` reachable only through the reserved
+namespace.
+
+- **Esc-Esc (idle)** opens the picker: a list of completed turns with
+  user-message preview, tool calls used, and a `⚠` glyph on turns that
+  invoked `Bash` (Bash side-effects cannot be rolled back).
+- **Enter** in the picker opens the restore-confirm modal where you choose
+  `[c]` (rewind conversation only) or `[b]` (rewind conversation **and**
+  restore working-tree files the agent touched). Files you edited by hand
+  after the agent's last turn are flagged `! path (modified by you)` and
+  excluded from restore unless you explicitly toggle `o` to include them.
+- **Ctrl+Z (idle)** or **`/unrewind`** undoes the last rewind. The undo slot
+  holds exactly one rewind and is cleared on the next user submission.
+
+Snapshots are best-effort and never break the live agent flow: if go-git
+errors during snapshot the turn still succeeds, just without a rewind point.
+Cancelled or errored turns never produce a snapshot — rewind targets always
+represent stable end-of-turn states.
+
+The reserved ref namespace `refs/sam/checkpoints/` should not be used for
+any other purpose. SAM scrubs every ref it created at clean exit, and on
+startup sweeps refs whose session sidecar (`$XDG_STATE_HOME/sam/sessions/<id>.json`)
+is missing or older than 7 days.
+
+When SAM is launched outside a git repo, rewind is silently disabled —
+Esc-Esc surfaces "rewind unavailable: not in a git repo" instead.
 
 ### CGO requirement
 

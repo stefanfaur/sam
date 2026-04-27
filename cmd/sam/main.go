@@ -11,7 +11,10 @@ import (
 	"syscall"
 
 	tea "github.com/charmbracelet/bubbletea"
+	"time"
+
 	"github.com/stefanfaur/sam/internal/agent"
+	"github.com/stefanfaur/sam/internal/checkpoint"
 	"github.com/stefanfaur/sam/internal/config"
 	"github.com/stefanfaur/sam/internal/llm"
 	"github.com/stefanfaur/sam/internal/llm/registry"
@@ -173,6 +176,30 @@ func runTUI(ctx context.Context, cfg *config.Config, sysDir string, logger *slog
 
 	skillReg := buildSkillsRegistry(cwd, logger)
 
+	// Rewind / checkpoint wiring. Checkpoints require a git repo; outside one
+	// the manager stays nil and the TUI surfaces "rewind unavailable" instead
+	// of crashing on Esc-Esc. We sweep stale refs from previous crashed
+	// sessions on startup so refs/sam/checkpoints/ does not grow without bound.
+	checkpointEnabled, escDoubleWindowMs := cfg.UX.Resolved()
+	sessionID := checkpoint.SessionID()
+	var ckptMgr *checkpoint.Manager
+	if checkpointEnabled && checkpoint.IsGitRepo(cwd) {
+		const orphanTTL = 7 * 24 * time.Hour
+		if err := checkpoint.SweepOrphans(cwd, orphanTTL, agent.SessionMTime); err != nil {
+			logger.Warn("checkpoint: orphan sweep failed", "err", err)
+		}
+		var err error
+		ckptMgr, err = checkpoint.New(cwd, sessionID)
+		if err != nil {
+			logger.Warn("checkpoint: init failed", "err", err)
+			ckptMgr = nil
+		}
+	} else if !checkpointEnabled {
+		logger.Info("checkpoint: disabled by config ([ux] checkpoint_enabled=false)")
+	} else {
+		logger.Info("checkpoint: not in a git repo — rewind disabled")
+	}
+
 	a := agent.New(agent.Options{
 		Provider:            prov,
 		Tools:               registry,
@@ -185,9 +212,25 @@ func runTUI(ctx context.Context, cfg *config.Config, sysDir string, logger *slog
 		LaunchDir:           cwd,
 		Logger:              logger,
 		Skills:              skillReg,
+		SessionID:           sessionID,
+		Checkpoint:          ckptMgr,
 	})
 	a.Start()
 	defer a.Close()
+	defer func() {
+		// Cleanup runs on normal exit AND when the SIGINT/SIGTERM ctx is
+		// cancelled (Bubbletea's Run returns shortly after). DeleteSession
+		// drops every refs/sam/checkpoints/<sid>/* ref the agent wrote, and
+		// agent.DeleteSession scrubs the JSON sidecar.
+		if ckptMgr != nil {
+			if err := ckptMgr.DeleteSession(); err != nil {
+				logger.Warn("checkpoint: cleanup refs", "err", err)
+			}
+		}
+		if err := agent.DeleteSession(sessionID); err != nil {
+			logger.Warn("checkpoint: cleanup sidecar", "err", err)
+		}
+	}()
 
 	model := tui.New(a, ring, tui.Options{
 		Provider: cfg.Provider,
@@ -200,13 +243,17 @@ func runTUI(ctx context.Context, cfg *config.Config, sysDir string, logger *slog
 		SystemResolverFn: func(m string) string {
 			return resolveSystemPrompt(cfg, sysDir, m, logger)
 		},
-		Providers: cfg.Providers,
+		Providers:       cfg.Providers,
+		EscDoubleWindow: time.Duration(escDoubleWindowMs) * time.Millisecond,
 	})
 	model.SetSkills(skillReg)
 	prog := tea.NewProgram(model, tea.WithContext(ctx))
+	// Run the TUI but don't os.Exit — that would skip the deferred
+	// checkpoint cleanup above and leak the session's refs+sidecar until
+	// the next startup's orphan sweep (7-day TTL). Print the error and
+	// fall through; the deferred Close + DeleteSession handle teardown.
 	if _, err := prog.Run(); err != nil {
 		fmt.Fprintln(os.Stderr, "error:", err)
-		os.Exit(1)
 	}
 }
 

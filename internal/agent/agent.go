@@ -7,6 +7,7 @@ import (
 	"os"
 	"sync"
 
+	"github.com/stefanfaur/sam/internal/checkpoint"
 	"github.com/stefanfaur/sam/internal/llm"
 	"github.com/stefanfaur/sam/internal/policy"
 	"github.com/stefanfaur/sam/internal/skills"
@@ -59,6 +60,13 @@ type Agent struct {
 
 	steerMu    sync.Mutex // protects steerQueue
 	steerQueue []string   // queued mid-stream steer messages
+
+	// Rewind / checkpoint state. checkpoint may be nil when sam runs outside
+	// a git repo (rewind unavailable). turnCount counts graceful turn
+	// completions for ref naming; mu protects both.
+	sessionID  string
+	checkpoint *checkpoint.Manager
+	turnCount  int
 }
 
 type Options struct {
@@ -73,6 +81,12 @@ type Options struct {
 	LaunchDir           string
 	Logger              *slog.Logger
 	Skills              *skills.Registry
+	// SessionID identifies the current sam session. Empty disables checkpoint
+	// persistence (sidecar JSON + per-turn snapshots).
+	SessionID string
+	// Checkpoint is the per-session checkpoint manager. Nil disables snapshots
+	// (e.g. sam was launched outside a git repo).
+	Checkpoint *checkpoint.Manager
 }
 
 func New(opts Options) *Agent {
@@ -105,9 +119,69 @@ func New(opts Options) *Agent {
 		in:                make(chan submit, 1),
 		history:           []llm.Message{},
 		log:               opts.Logger,
+		sessionID:         opts.SessionID,
+		checkpoint:        opts.Checkpoint,
 	}
 	a.RebuildSkillCatalog()
 	return a
+}
+
+// SessionID returns the agent's current session id (may be empty).
+func (a *Agent) SessionID() string {
+	a.mu.Lock()
+	defer a.mu.Unlock()
+	return a.sessionID
+}
+
+// CheckpointEnabled reports whether checkpoint snapshots are wired.
+func (a *Agent) CheckpointEnabled() bool {
+	a.mu.Lock()
+	defer a.mu.Unlock()
+	return a.checkpoint != nil && a.sessionID != ""
+}
+
+// TurnCount returns the number of graceful turn completions recorded so far.
+func (a *Agent) TurnCount() int {
+	a.mu.Lock()
+	defer a.mu.Unlock()
+	return a.turnCount
+}
+
+// SetTurnCount overrides the turn counter — used by rewind to roll the agent
+// back to a previous turn boundary.
+func (a *Agent) SetTurnCount(n int) {
+	if n < 0 {
+		n = 0
+	}
+	a.mu.Lock()
+	defer a.mu.Unlock()
+	a.turnCount = n
+}
+
+// Checkpoint returns the per-session checkpoint manager (nil when sam runs
+// outside a git repo).
+func (a *Agent) Checkpoint() *checkpoint.Manager {
+	a.mu.Lock()
+	defer a.mu.Unlock()
+	return a.checkpoint
+}
+
+// History returns a snapshot copy of the conversation history.
+func (a *Agent) History() []llm.Message {
+	a.mu.Lock()
+	defer a.mu.Unlock()
+	out := make([]llm.Message, len(a.history))
+	copy(out, a.history)
+	return out
+}
+
+// SetHistory replaces the conversation history. The caller is responsible
+// for keeping it wire-valid (alternating roles / matching tool_use+result
+// pairs); rewind targets always sit on a turn boundary so this holds.
+func (a *Agent) SetHistory(h []llm.Message) {
+	a.mu.Lock()
+	defer a.mu.Unlock()
+	a.history = append([]llm.Message(nil), h...)
 }
 
 // SetSkills swaps the skills registry and rebuilds the catalog.

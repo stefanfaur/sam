@@ -1,0 +1,66 @@
+{
+  "planPath": "thoughts/shared/plans/tui/2026-04-26-feature-b-rewind-implementation.md",
+  "tasks": [
+    {
+      "id": 0,
+      "subject": "Task 1: Implement Checkpoint Package (git operations foundation)",
+      "status": "completed",
+      "blockedBy": []
+    },
+    {
+      "id": 1,
+      "subject": "Task 2: Implement Turn Record Durability (per-turn metadata)",
+      "status": "completed",
+      "blockedBy": []
+    },
+    {
+      "id": 2,
+      "subject": "Task 3: Extend Agent to Record Turns and Trigger Snapshots",
+      "status": "completed",
+      "blockedBy": [0, 1]
+    },
+    {
+      "id": 3,
+      "subject": "Task 4: Implement Checkpoint Restore and Overlap Detection",
+      "status": "completed",
+      "blockedBy": [0]
+    },
+    {
+      "id": 4,
+      "subject": "Task 5: Implement Picker and Restore Confirm Components (Bubbletea TUI)",
+      "status": "completed",
+      "blockedBy": [0, 3]
+    },
+    {
+      "id": 5,
+      "subject": "Task 6: Wire Esc-Esc Idle Detection and Ctrl+Z Undo in TUI",
+      "status": "completed",
+      "blockedBy": [4]
+    },
+    {
+      "id": 6,
+      "subject": "Task 7: Wire Session ID Assignment and Git Repo Check in main.go",
+      "status": "completed",
+      "blockedBy": [0, 2]
+    },
+    {
+      "id": 7,
+      "subject": "Task 8: Integration Test — Multi-Turn Rewind with Code Restore",
+      "status": "completed",
+      "blockedBy": [2, 3, 4, 5]
+    },
+    {
+      "id": 8,
+      "subject": "Task 9: Update README and Configuration Defaults",
+      "status": "completed",
+      "blockedBy": [5, 6]
+    },
+    {
+      "id": 9,
+      "subject": "Task 10: Final Integration and End-to-End Validation",
+      "status": "completed",
+      "blockedBy": [7, 8]
+    }
+  ],
+  "lastUpdated": "2026-04-27T00:00:00Z"
+}

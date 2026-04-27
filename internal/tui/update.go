@@ -79,6 +79,13 @@ func (m *Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 
 	case quitMsg:
 		return m, tea.Quit
+
+	case rewindHintTickMsg:
+		// Hint TTL elapsed — drop the banner if it's still ours.
+		if !m.rewindHint.Active() {
+			m.rewindHint = rewindHintState{}
+		}
+		return m, nil
 	}
 
 	// route to modal / approval if active
@@ -165,6 +172,10 @@ func (m *Model) View() string {
 		bottom = m.modal.View()
 	} else if m.approval != nil {
 		bottom = m.approval.View()
+	} else if m.rewind != nil {
+		bottom = m.rewind.Render(m.theme, m.width, m.height-statusHeight-2)
+	} else if m.restoreUI != nil {
+		bottom = m.restoreUI.Render(m.theme, m.width-4)
 	} else if m.picker != nil {
 		bottom = m.renderFilePicker() + "\n" + m.renderInputBox()
 	} else if m.suggest.active {
@@ -173,6 +184,9 @@ func (m *Model) View() string {
 		if ind := renderQueueIndicator(m.theme, m.agent.GetQueue(), m.width); ind != "" {
 			bottom = ind + "\n" + m.renderInputBox()
 		}
+	}
+	if hint := m.renderRewindHint(); hint != "" && m.rewind == nil && m.restoreUI == nil {
+		parts = append(parts, hint)
 	}
 	parts = append(parts, bottom)
 
@@ -217,6 +231,18 @@ func (m *Model) handleKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 		}
 	}
 
+	// Rewind picker / restore-confirm modal swallow keys when open.
+	if m.rewind != nil {
+		if cmd, handled := m.handleRewindPickerKey(msg); handled {
+			return m, cmd
+		}
+	}
+	if m.restoreUI != nil {
+		if cmd, handled := m.handleRestoreConfirmKey(msg); handled {
+			return m, cmd
+		}
+	}
+
 	switch msg.Type {
 	case tea.KeyCtrlC:
 		now := time.Now()
@@ -253,6 +279,13 @@ func (m *Model) handleKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 		// macOS) inserts text via bracketed paste; Ctrl+V is the explicit
 		// "attach image from clipboard" shortcut.
 		return m, m.cmdPasteImage()
+
+	case tea.KeyCtrlZ:
+		// Undo the most recent rewind, if any. Idle-only — when a turn is
+		// in flight Ctrl+Z falls through to the default suspend behaviour.
+		if m.pending == nil && m.undoRewind != nil {
+			return m, m.applyUndoRewind()
+		}
 
 	case tea.KeyEsc:
 		// Suggestion menu dismissal beats cancel routing.
@@ -293,7 +326,19 @@ func (m *Model) handleKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 			m.lastEscTime = now
 			return m, nil
 		}
-		// Idle empty input: reserved for future double-Esc semantics.
+		// Idle empty input: double-Esc within window opens the rewind picker.
+		window := m.escDoubleWindow
+		if window <= 0 {
+			window = 500 * time.Millisecond
+		}
+		if !m.lastEscTime.IsZero() && now.Sub(m.lastEscTime) < window {
+			m.lastEscTime = time.Time{}
+			cmd, ok := m.openRewindPicker()
+			if !ok {
+				return m, cmd
+			}
+			return m, nil
+		}
 		m.lastEscTime = now
 		return m, nil
 
@@ -583,6 +628,8 @@ func (m *Model) startTurn(text string) (tea.Model, tea.Cmd) {
 	if cmd, arg, sk := parseCommand(text, m.skills); cmd != CmdNone {
 		return m.dispatchCommand(cmd, arg, sk)
 	}
+	// New user input invalidates any one-slot rewind undo.
+	m.clearUndoOnNextSubmit()
 
 	// Extract @image:/path tokens; loaded files become attachments alongside
 	// any clipboard images already queued in m.imageAttachments. The cleaned
@@ -719,6 +766,11 @@ func (m *Model) dispatchCommand(cmd Command, arg string, sk *skills.Skill) (tea.
 		m.input.Reset()
 		m.suggest.active = false
 		return m, m.showThinking(arg)
+
+	case CmdUnrewind:
+		m.input.Reset()
+		m.suggest.active = false
+		return m, m.applyUndoRewind()
 
 	case CmdUnknown:
 		m.input.Reset()
