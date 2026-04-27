@@ -117,6 +117,12 @@ type Model struct {
 	recentThinking    []thinkingInvocation
 	nextToolIndex     int
 	nextThinkingIndex int
+
+	picker         *filePicker
+	pickerAnchor   int    // textarea char offset where the '@' was inserted
+	pickerOriginal string // textarea value at the time '@' was pressed
+
+	imageAttachments []imageAttachment
 }
 
 // skillInvocation is a TUI-side record of a slash-invoked skill so its body

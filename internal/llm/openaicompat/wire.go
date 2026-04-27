@@ -1,5 +1,19 @@
 package openaicompat
 
+import "encoding/json"
+
+// contentPart is one element of an OpenAI multimodal content array. Used for
+// user messages that include image content alongside text.
+type contentPart struct {
+	Type     string         `json:"type"`
+	Text     string         `json:"text,omitempty"`
+	ImageURL *contentPartImage `json:"image_url,omitempty"`
+}
+
+type contentPartImage struct {
+	URL string `json:"url"`
+}
+
 // chatRequest is the outbound body for POST /chat/completions.
 type chatRequest struct {
 	Model               string         `json:"model"`
@@ -24,11 +38,41 @@ type streamOptions struct {
 
 type chatMessage struct {
 	Role             string         `json:"role"`
-	Content          *string        `json:"content,omitempty"`
+	Content          *string        `json:"-"`
+	MultiContent     []contentPart  `json:"-"`
 	Reasoning        string         `json:"reasoning,omitempty"`
 	ReasoningContent string         `json:"reasoning_content,omitempty"`
 	ToolCalls        []chatToolCall `json:"tool_calls,omitempty"`
 	ToolCallID       string         `json:"tool_call_id,omitempty"`
+}
+
+// MarshalJSON renders chatMessage with `content` as either a string (when
+// Content is set) or an array of multimodal parts (when MultiContent is set).
+// MultiContent takes precedence when both are populated. When neither is set
+// the field is omitted.
+func (m chatMessage) MarshalJSON() ([]byte, error) {
+	type wireMsg struct {
+		Role             string         `json:"role"`
+		Content          any            `json:"content,omitempty"`
+		Reasoning        string         `json:"reasoning,omitempty"`
+		ReasoningContent string         `json:"reasoning_content,omitempty"`
+		ToolCalls        []chatToolCall `json:"tool_calls,omitempty"`
+		ToolCallID       string         `json:"tool_call_id,omitempty"`
+	}
+	w := wireMsg{
+		Role:             m.Role,
+		Reasoning:        m.Reasoning,
+		ReasoningContent: m.ReasoningContent,
+		ToolCalls:        m.ToolCalls,
+		ToolCallID:       m.ToolCallID,
+	}
+	switch {
+	case len(m.MultiContent) > 0:
+		w.Content = m.MultiContent
+	case m.Content != nil:
+		w.Content = *m.Content
+	}
+	return json.Marshal(w)
 }
 
 type chatToolCall struct {

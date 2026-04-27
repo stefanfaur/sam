@@ -14,9 +14,10 @@ import (
 )
 
 type submit struct {
-	userMsg string
-	out     chan Event
-	ctx     context.Context
+	userMsg     string
+	attachments []llm.ImageAttachment
+	out         chan Event
+	ctx         context.Context
 }
 
 // CancelMode is the scope of a cancel request.
@@ -253,8 +254,15 @@ func (a *Agent) drainQueue() []string {
 
 // Submit sends a message to the agent for processing
 func (a *Agent) Submit(ctx context.Context, userMsg string) <-chan Event {
+	return a.SubmitWithAttachments(ctx, userMsg, nil)
+}
+
+// SubmitWithAttachments sends a user turn that includes binary image
+// attachments alongside the text. Attachments are encoded as ContentImage
+// blocks appended after the text content.
+func (a *Agent) SubmitWithAttachments(ctx context.Context, userMsg string, atts []llm.ImageAttachment) <-chan Event {
 	out := make(chan Event, 64)
-	a.in <- submit{userMsg: userMsg, out: out, ctx: ctx}
+	a.in <- submit{userMsg: userMsg, attachments: atts, out: out, ctx: ctx}
 	return out
 }
 

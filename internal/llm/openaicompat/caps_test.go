@@ -78,6 +78,26 @@ func TestMergeCapsOverridesReplace(t *testing.T) {
 	}
 }
 
+func TestVisionCapabilityFlags(t *testing.T) {
+	cases := map[string]bool{
+		"gpt-4o":         true,
+		"gpt-4o-mini":    true,
+		"gpt-4-turbo":    true,
+		"gpt-4.1":        true,
+		"gpt-4":          false,
+		"gpt-3.5-turbo":  false,
+		"o3-mini":        false,
+		"deepseek-r1":    false,
+		"trinity-large":  false,
+		"kimi-k2.6":      false,
+	}
+	for model, want := range cases {
+		if got := DefaultCaps(model).Vision; got != want {
+			t.Errorf("DefaultCaps(%q).Vision = %v, want %v", model, got, want)
+		}
+	}
+}
+
 func TestMatchesPrefix(t *testing.T) {
 	if !MatchesPrefix("gpt-5") {
 		t.Error("gpt-5 should match")

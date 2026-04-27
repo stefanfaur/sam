@@ -2,6 +2,7 @@ package agent
 
 import (
 	"context"
+	"encoding/base64"
 	"encoding/json"
 	"errors"
 	"fmt"
@@ -13,6 +14,8 @@ import (
 	"github.com/stefanfaur/sam/internal/tools"
 )
 
+func encodeBase64(b []byte) string { return base64.StdEncoding.EncodeToString(b) }
+
 // parallelToolSem caps concurrent parallel-safe tool executions across the
 // process. A turn rarely emits more than a handful of parallel-safe calls, so
 // 8 covers typical fan-out without a config knob.
@@ -22,10 +25,15 @@ func (a *Agent) turn(parentCtx context.Context, s submit) {
 	// Add user message to history. If a previous turn errored mid-stream and
 	// the user queued steer messages while waiting, prepend them now so the
 	// edits survive the failed turn.
-	userMsg := llm.Message{
-		Role:    llm.RoleUser,
-		Content: []llm.ContentBlock{{Type: llm.ContentText, Text: s.userMsg}},
+	content := []llm.ContentBlock{{Type: llm.ContentText, Text: s.userMsg}}
+	for _, att := range s.attachments {
+		content = append(content, llm.ContentBlock{
+			Type:      llm.ContentImage,
+			ImageData: encodeBase64(att.Data),
+			MediaType: att.MediaType,
+		})
 	}
+	userMsg := llm.Message{Role: llm.RoleUser, Content: content}
 	a.prependQueuedText(&userMsg)
 	a.history = append(a.history, userMsg)
 

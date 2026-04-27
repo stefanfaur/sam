@@ -62,6 +62,13 @@ func (m *Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		m.input.Focus()
 		return m, nil
 
+	case imageAttachedMsg:
+		m.imageAttachments = append(m.imageAttachments, msg.att)
+		return m, nil
+
+	case imageAttachErrMsg:
+		return m, m.addInfo("image attach: " + msg.err.Error())
+
 	case spinnerTickMsg:
 		if m.pending == nil {
 			m.spinner.on = false
@@ -158,6 +165,8 @@ func (m *Model) View() string {
 		bottom = m.modal.View()
 	} else if m.approval != nil {
 		bottom = m.approval.View()
+	} else if m.picker != nil {
+		bottom = m.renderFilePicker() + "\n" + m.renderInputBox()
 	} else if m.suggest.active {
 		bottom = m.renderSuggestions() + "\n" + m.renderInputBox()
 	} else if m.pending != nil && m.agent != nil {
@@ -182,7 +191,11 @@ func (m *Model) renderInputBox() string {
 	if m.width > 4 {
 		style = style.Width(m.width - 2)
 	}
-	return style.Render(m.input.View())
+	box := style.Render(m.input.View())
+	if badge := attachmentBadge(m.imageAttachments, m.status.provider); badge != "" {
+		return m.theme.Suggest.Render(badge) + "\n" + box
+	}
+	return box
 }
 
 func (m *Model) handleKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
@@ -195,6 +208,13 @@ func (m *Model) handleKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 			return m, tea.Batch(cmd, applyCmd)
 		}
 		return m, cmd
+	}
+
+	// File picker swallows keys when active.
+	if m.picker != nil {
+		if model, cmd, handled := m.handleFilePickerKey(msg); handled {
+			return model, cmd
+		}
 	}
 
 	switch msg.Type {
@@ -227,6 +247,12 @@ func (m *Model) handleKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 			return m, tea.EnterAltScreen
 		}
 		return m, tea.ExitAltScreen
+
+	case tea.KeyCtrlV:
+		// Trigger clipboard image attach. Terminal native paste (Cmd+V on
+		// macOS) inserts text via bracketed paste; Ctrl+V is the explicit
+		// "attach image from clipboard" shortcut.
+		return m, m.cmdPasteImage()
 
 	case tea.KeyEsc:
 		// Suggestion menu dismissal beats cancel routing.
@@ -353,6 +379,15 @@ func (m *Model) handleKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 	if m.approval != nil {
 		return m, m.approval.Update(msg)
 	}
+	// '@' at a token boundary opens the file picker. Picker swallows the rune;
+	// completion path inserts the full "@<path> " token via textarea.InsertString.
+	if m.picker == nil && msg.Type == tea.KeyRunes && len(msg.Runes) == 1 && msg.Runes[0] == '@' {
+		if isPickerBoundary(m.input.Value()) {
+			files, _ := getFilesForPicker(m.agent.LaunchDir())
+			m.picker = newFilePicker(files)
+			return m, nil
+		}
+	}
 	// Pre-grow input for keys that will insert a newline so the textarea
 	// viewport has room on the new line and doesn't scroll line 0 (with the
 	// prompt arrow) out of view.
@@ -364,6 +399,61 @@ func (m *Model) handleKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 	m.adjustInputHeight()
 	m.refreshSuggestions()
 	return m, cmd
+}
+
+// isPickerBoundary reports whether a freshly typed '@' should open the file
+// picker. Boundary = empty input or last rune is whitespace; otherwise the
+// '@' is part of an in-line token (e.g. an email or @image:/path) and should
+// not trigger the picker.
+func isPickerBoundary(value string) bool {
+	if value == "" {
+		return true
+	}
+	runes := []rune(value)
+	last := runes[len(runes)-1]
+	return last == ' ' || last == '\t' || last == '\n'
+}
+
+// handleFilePickerKey routes a key event to the active file picker. The third
+// return value indicates whether the picker handled the event; when false,
+// the caller should fall through to the normal key path.
+func (m *Model) handleFilePickerKey(msg tea.KeyMsg) (tea.Model, tea.Cmd, bool) {
+	switch msg.Type {
+	case tea.KeyEsc:
+		m.picker = nil
+		return m, nil, true
+	case tea.KeyUp:
+		m.picker.moveSelection(-1)
+		return m, nil, true
+	case tea.KeyDown:
+		m.picker.moveSelection(1)
+		return m, nil, true
+	case tea.KeyTab, tea.KeyEnter:
+		path := m.picker.current()
+		m.picker = nil
+		if path != "" {
+			m.input.InsertString("@" + path + " ")
+			m.adjustInputHeight()
+		}
+		return m, nil, true
+	case tea.KeyBackspace:
+		runes := []rune(m.picker.query)
+		if len(runes) == 0 {
+			m.picker = nil
+			return m, nil, true
+		}
+		m.picker.setQuery(string(runes[:len(runes)-1]))
+		return m, nil, true
+	case tea.KeySpace:
+		// Space cancels the picker but flows on to the textarea so the user
+		// can keep typing without losing the keystroke.
+		m.picker = nil
+		return m, nil, false
+	case tea.KeyRunes:
+		m.picker.setQuery(m.picker.query + string(msg.Runes))
+		return m, nil, true
+	}
+	return m, nil, false
 }
 
 // adjustInputHeight grows the textarea to fit its content (counting
@@ -494,6 +584,19 @@ func (m *Model) startTurn(text string) (tea.Model, tea.Cmd) {
 		return m.dispatchCommand(cmd, arg, sk)
 	}
 
+	// Extract @image:/path tokens; loaded files become attachments alongside
+	// any clipboard images already queued in m.imageAttachments. The cleaned
+	// text (with the tokens stripped) is what the model receives.
+	cleaned, refPaths := extractImageRefs(text)
+	if len(refPaths) > 0 {
+		if err := m.attachImageRefs(refPaths); err != nil {
+			return m, m.addInfo("image attach: " + err.Error())
+		}
+		text = cleaned
+	}
+
+	atts := m.collectAttachments()
+
 	userMsg := m.renderUserMsg(text)
 	m.status.state = "thinking"
 	m.status.iter = 0
@@ -504,7 +607,8 @@ func (m *Model) startTurn(text string) (tea.Model, tea.Cmd) {
 	m.spinner.on = m.settings.Statusbar.Spinner
 	m.input.Blur()
 
-	events := m.agent.Submit(context.Background(), text)
+	events := m.agent.SubmitWithAttachments(context.Background(), text, atts)
+	m.imageAttachments = nil
 	m.pending = &pendingTurn{events: events}
 	m.scanner = &blockScanner{}
 

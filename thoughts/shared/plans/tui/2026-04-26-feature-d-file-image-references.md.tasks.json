@@ -1,0 +1,17 @@
+{
+  "planPath": "thoughts/shared/plans/tui/2026-04-26-feature-d-file-image-references.md",
+  "tasks": [
+    {"id": 0, "subject": "Task 1: Image Preprocessing Pipeline", "status": "completed"},
+    {"id": 1, "subject": "Task 2: Vision Capability Registry", "status": "completed"},
+    {"id": 2, "subject": "Task 3: Image Content Block Type", "status": "completed"},
+    {"id": 3, "subject": "Task 4: Clipboard Binary Image Read", "status": "completed"},
+    {"id": 4, "subject": "Task 5: @file Picker Overlay", "status": "completed"},
+    {"id": 5, "subject": "Task 6: Image Paste and Token Estimation Badge", "status": "completed"},
+    {"id": 6, "subject": "Task 7: Vision Capability Gating", "status": "completed"},
+    {"id": 7, "subject": "Task 8: @image Syntax Support", "status": "completed"},
+    {"id": 8, "subject": "Task 9: Send Images with User Message", "status": "completed"},
+    {"id": 9, "subject": "Task 10: TUI Integration — Input Handler Wiring", "status": "completed"},
+    {"id": 10, "subject": "Task 11: Smoke Tests and Documentation", "status": "completed"}
+  ],
+  "lastUpdated": "2026-04-27T00:00:00Z"
+}

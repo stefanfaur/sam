@@ -21,6 +21,7 @@ type Capabilities struct {
 	ReasoningSource           string // "none" | "inline_think" | "reasoning_content" | "reasoning" | "both"
 	AuthHeader                string // "bearer" | "api-key" | "none"
 	PrependFormatting         bool   // o-series / gpt-5: prepend "Formatting re-enabled.\n"
+	Vision                    bool   // model accepts image content blocks
 }
 
 type capsEntry struct {
@@ -78,7 +79,18 @@ var orderedCapsTable = []capsEntry{
 		},
 	},
 	{
-		prefixes: []string{"gpt-4o", "gpt-4.1", "gpt-4", "gpt-3.5"},
+		prefixes: []string{"gpt-4o", "gpt-4-turbo", "gpt-4.1"},
+		caps: Capabilities{
+			SystemRole:             "system",
+			MaxTokensField:         "max_tokens",
+			SupportsSamplingParams: true,
+			ReasoningSource:        "none",
+			EchoReasoning:          false,
+			Vision:                 true,
+		},
+	},
+	{
+		prefixes: []string{"gpt-4", "gpt-3.5"},
 		caps: Capabilities{
 			SystemRole:             "system",
 			MaxTokensField:         "max_tokens",
@@ -118,6 +130,7 @@ func DefaultCaps(model string) Capabilities {
 				merged.ReasoningSource = e.caps.ReasoningSource
 				merged.EchoReasoning = e.caps.EchoReasoning
 				merged.PrependFormatting = e.caps.PrependFormatting
+				merged.Vision = e.caps.Vision
 				return merged
 			}
 		}

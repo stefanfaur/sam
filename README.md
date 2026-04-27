@@ -314,6 +314,41 @@ verify with `rtk --version`.
 | `Ctrl+C` | Cancel current turn; double-tap within 500ms to quit |
 | `Ctrl+D` | Quit (when input empty) |
 | `Ctrl+L` | Toggle debug overlay |
+| `Ctrl+V` | Attach binary image from clipboard |
+| `@` | Open file picker (fuzzy filter) |
+| `Esc` (in picker) | Close picker |
+| `Tab` / `Enter` (in picker) | Insert `@<path>` reference |
+
+### File and image references
+
+- **`@file` picker** — typing `@` at a token boundary opens an inline picker
+  sourced from `git ls-files`, falling back to a recursive walk that skips
+  hidden directories, `node_modules`, `vendor`, `dist`, `build`, and `target`.
+  Up/Down moves the cursor, Tab or Enter inserts `@<path> ` into the input,
+  Esc closes the overlay.
+- **`Ctrl+V` clipboard image** — reads a binary image from the system
+  clipboard, runs the preprocess pipeline (resize long-edge to ≤1568px with
+  Lanczos, format-select PNG/JPEG, strip EXIF/ICC), and queues it as an
+  attachment on the next user message. Cmd+V remains the terminal's bracketed
+  paste; for binary image attach, use Ctrl+V explicitly.
+- **`@image:/path/to/file.png`** — inline syntax. The token is stripped from
+  the outgoing text and the file is loaded, preprocessed, and attached.
+  Supported extensions: `.png`, `.jpg`/`.jpeg`, `.gif`, `.webp`.
+- **Vision gating** — attaches are refused with a refusal toast listing
+  vision-capable models when the active provider/model doesn't accept image
+  content. Anthropic Claude 3.x/4.x and OpenAI gpt-4o, gpt-4-turbo, gpt-4.1
+  pass the gate.
+- **Token estimate badge** — when attachments are queued, a one-line badge
+  renders above the input box: count, total token estimate (Anthropic
+  `(w*h)/750`; OpenAI tile-based `tilesW*tilesH*170+85`; unknown providers
+  show `≈ unknown`), provider name, dimensions, and total bytes.
+
+### CGO requirement
+
+Binary clipboard image read uses `golang.design/x/clipboard`, which requires
+CGO. Builds must run with `CGO_ENABLED=1` (the default on macOS/Linux dev
+environments). On Linux, the X11 development headers (`libx11-dev`) are
+needed at build time.
 
 ## Logs
 

@@ -16,6 +16,7 @@ const (
 	ContentThinking   ContentType = "thinking"
 	ContentToolUse    ContentType = "tool_use"
 	ContentToolResult ContentType = "tool_result"
+	ContentImage      ContentType = "image"
 )
 
 type ContentBlock struct {
@@ -27,6 +28,18 @@ type ContentBlock struct {
 	Input     json.RawMessage `json:"input,omitempty"`
 	Output    string          `json:"output,omitempty"`
 	IsError   bool            `json:"is_error,omitempty"`
+	ImageData string          `json:"image_data,omitempty"` // base64 image payload (no data: prefix)
+	MediaType string          `json:"media_type,omitempty"` // e.g. "image/png", "image/jpeg"
+}
+
+// ImageAttachment carries a single processed image to be attached to a user
+// turn. Data is the raw bytes (not base64 encoded); the agent base64-encodes
+// when constructing ContentImage blocks.
+type ImageAttachment struct {
+	Data      []byte
+	MediaType string
+	Width     int
+	Height    int
 }
 
 type Message struct {

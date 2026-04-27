@@ -71,12 +71,35 @@ func toWireMessages(sys string, msgs []llm.Message, caps Capabilities) []chatMes
 func translateUserMessage(msg llm.Message) []chatMessage {
 	var out []chatMessage
 	var text strings.Builder
+	hasImage := false
 	for _, b := range msg.Content {
-		if b.Type == llm.ContentText {
+		switch b.Type {
+		case llm.ContentText:
 			text.WriteString(b.Text)
+		case llm.ContentImage:
+			if b.ImageData != "" && b.MediaType != "" {
+				hasImage = true
+			}
 		}
 	}
-	if text.Len() > 0 {
+	if hasImage {
+		parts := make([]contentPart, 0, len(msg.Content)+1)
+		if text.Len() > 0 {
+			parts = append(parts, contentPart{Type: "text", Text: text.String()})
+		}
+		for _, b := range msg.Content {
+			if b.Type != llm.ContentImage || b.ImageData == "" || b.MediaType == "" {
+				continue
+			}
+			parts = append(parts, contentPart{
+				Type: "image_url",
+				ImageURL: &contentPartImage{
+					URL: "data:" + b.MediaType + ";base64," + b.ImageData,
+				},
+			})
+		}
+		out = append(out, chatMessage{Role: "user", MultiContent: parts})
+	} else if text.Len() > 0 {
 		out = append(out, chatMessage{Role: "user", Content: strPtr(text.String())})
 	}
 	for _, b := range msg.Content {

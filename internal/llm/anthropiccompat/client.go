@@ -48,6 +48,11 @@ func BuildMessages(in []llm.Message) []anthropic.MessageParam {
 					block.Output,
 					block.IsError,
 				))
+			case llm.ContentImage:
+				if block.ImageData == "" || block.MediaType == "" {
+					continue
+				}
+				blocks = append(blocks, anthropic.NewImageBlockBase64(block.MediaType, block.ImageData))
 			}
 		}
 		// Skip messages whose blocks filtered to empty (e.g. an

@@ -1,8 +1,8 @@
 # Domain: Agent
-> Last updated: 2026-04-26
+> Last updated: 2026-04-27
 
 ## Key Files
-- `internal/agent/agent.go` — Core agent loop, message history, turn submission; setters (SetProvider, SetModel, SetMaxIters, SetSystem) for mid-session reconfiguration; steer-queue API (`QueueSteer`, `DiscardQueue`, `GetQueue`, `drainQueue`)
+- `internal/agent/agent.go` — Core agent loop, message history, turn submission; setters (SetProvider, SetModel, SetMaxIters, SetSystem) for mid-session reconfiguration; steer-queue API (`QueueSteer`, `DiscardQueue`, `GetQueue`, `drainQueue`); `Submit` and `SubmitWithAttachments` (the latter accepts `[]llm.ImageAttachment`)
 - `internal/agent/loop.go` — Turn body, stream consumption, tool dispatch (serial + parallel group); `mergeQueuedText` / `prependQueuedText` helpers for the mid-stream steer drain
 - `cmd/sam/main.go` — Entry point, CLI flags, agent initialization
 
